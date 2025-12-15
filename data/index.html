@@ -100,6 +100,14 @@
     <legend>OTA Update</legend>
     <label>Firmware URL <input type="text" id="fwUrl" placeholder="https://github.com/user/repo/releases/download/v1/firmware.bin"></label>
     <button id="btnUpdate">Update &amp; Reboot</button>
+    <div style="margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
+      <div class="inline" style="gap:8px;">
+        <strong>Release Check</strong>
+        <button type="button" id="btnCheckRelease">Neueste Version laden</button>
+        <button type="button" id="btnReleaseUpdate" class="btn-primary" disabled>Release flashen</button>
+      </div>
+      <div id="releaseInfo" style="margin-top:8px; font-size:14px; color:#0f172a; white-space:pre-wrap;">Noch nicht geladen.</div>
+    </div>
   </fieldset>
 
   <fieldset>
@@ -116,6 +124,9 @@
     const modeSelect = document.querySelector('select[name="mode"]');
     const effectSelect = document.querySelector('select[name="effect"]');
     const effectSpeedLabel = document.getElementById('effectSpeedLabel');
+    const releaseInfo = document.getElementById('releaseInfo');
+    const btnCheckRelease = document.getElementById('btnCheckRelease');
+    const btnReleaseUpdate = document.getElementById('btnReleaseUpdate');
 
     function dayLabel(idx){
       return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
@@ -194,6 +205,38 @@
     document.querySelector('input[name="effectSpeed"]').addEventListener('input', (e)=>{
       effectSpeedLabel.textContent = e.target.value;
     });
+
+    function escapeHtml(str){
+      return str.replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+    }
+
+    async function loadLatestRelease(){
+      releaseInfo.textContent = 'Lade...';
+      btnReleaseUpdate.disabled = true;
+      try {
+        const res = await fetch('https://api.github.com/repos/dani251198/led-sign/releases/latest', {headers:{'Accept':'application/vnd.github+json'}});
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const notes = escapeHtml(data.body || 'Keine Release Notes');
+        const asset = (data.assets || []).find(a => /firmware\.bin/i.test(a.name));
+        const fwUrl = asset ? asset.browser_download_url : '';
+        releaseInfo.innerHTML = `Version: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${asset.name}` : '\nKeine Firmware-Asset gefunden'}`;
+        if(fwUrl){
+          releaseInfo.dataset.fwUrl = fwUrl;
+          btnReleaseUpdate.disabled = false;
+          btnReleaseUpdate.textContent = `Release flashen (${data.tag_name || asset.name})`;
+        } else {
+          releaseInfo.dataset.fwUrl = '';
+          btnReleaseUpdate.disabled = true;
+        }
+      } catch(err){
+        releaseInfo.textContent = 'Fehler: ' + err.message;
+        releaseInfo.dataset.fwUrl = '';
+        btnReleaseUpdate.disabled = true;
+      }
+    }
+
+    btnCheckRelease.addEventListener('click', loadLatestRelease);
 
     function toIsoFromGerman(val){
       // Accept DD.MM.YYYY HH:MM and fallback to passthrough
@@ -297,6 +340,17 @@
       const url = document.getElementById('fwUrl').value;
       if(!url) return alert('URL fehlt');
       const res = await fetch('/api/update',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
+      if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
+      else{ alert('Update fehlgeschlagen'); }
+    });
+
+    btnReleaseUpdate.addEventListener('click', async ()=>{
+      const fwUrl = releaseInfo.dataset.fwUrl;
+      if(!fwUrl){
+        alert('Keine Firmware-URL gefunden. Bitte Release laden.');
+        return;
+      }
+      const res = await fetch('/api/update',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: fwUrl})});
       if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
       else{ alert('Update fehlgeschlagen'); }
     });
