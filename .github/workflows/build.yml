@@ -1,0 +1,46 @@
+name: Build firmware
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install PlatformIO
+        run: pip install --upgrade platformio
+
+      - name: Build firmware
+        run: pio run --environment esp32-wroom32
+
+      - name: Build LittleFS image
+        run: pio run --target buildfs --environment esp32-wroom32
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p artifacts
+          cp .pio/build/esp32-wroom32/firmware.bin artifacts/firmware.bin
+          cp .pio/build/esp32-wroom32/littlefs.bin artifacts/littlefs.bin
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: led-sign-${{ github.ref_name }}
+          path: artifacts/
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
