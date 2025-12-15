@@ -153,6 +153,7 @@
       </div>
       <div id="releaseInfo" style="margin-top:8px; font-size:14px; color:#0f172a; white-space:pre-wrap;">Noch nicht geladen.</div>
       <div id="updateStatus" class="hidden" style="margin-top:6px; font-size:13px; color:#0f172a;">Update-Status</div>
+      <div id="updateProgress" class="hidden" style="margin-top:4px; font-size:12px; color:#475569;"></div>
     </div>
   </fieldset>
 
@@ -178,6 +179,7 @@
     const dateNowEl = document.getElementById('dateNow');
     const fwVersionEl = document.getElementById('fwVersion');
     const updateStatusEl = document.getElementById('updateStatus');
+    const updateProgressEl = document.getElementById('updateProgress');
     const icalListEl = document.getElementById('icalList');
     const newIcalUrl = document.getElementById('newIcalUrl');
     const newIcalColor = document.getElementById('newIcalColor');
@@ -606,6 +608,31 @@
     }
 
     let updateStatusTimer;
+    let updateProgressTimer;
+    let updateStartTs = 0;
+
+    function stopUpdateTimer(){
+      if(updateProgressTimer){
+        clearInterval(updateProgressTimer);
+        updateProgressTimer = null;
+      }
+      updateProgressEl.textContent = '';
+      updateProgressEl.classList.add('hidden');
+      updateStartTs = 0;
+    }
+
+    function startUpdateTimer(){
+      stopUpdateTimer();
+      updateStartTs = Date.now();
+      updateProgressTimer = setInterval(()=>{
+        const sec = Math.floor((Date.now() - updateStartTs)/1000);
+        const mins = Math.floor(sec / 60);
+        const secs = sec % 60;
+        const warn = sec > 90 ? ' (kann mehrere Minuten dauern, geduldig warten)' : '';
+        updateProgressEl.textContent = `Laufzeit: ${mins}:${secs.toString().padStart(2,'0')} – Fortschritt im Seriell-Log ansehen${warn}.`;
+        updateProgressEl.classList.remove('hidden');
+      }, 1000);
+    }
 
     function setUpdateStatus(text = '', tone = 'info', clearAfterMs = 0){
       if(updateStatusTimer){
@@ -623,6 +650,7 @@
       if(clearAfterMs > 0){
         updateStatusTimer = setTimeout(()=>setUpdateStatus('', tone, 0), clearAfterMs);
       }
+      if(tone === 'error') stopUpdateTimer();
     }
 
     async function loadLatestRelease(){
@@ -757,6 +785,7 @@
           return;
         }
         setUpdateStatus(`Starte Update...\nFW: ${fwUrl}${fsUrl ? `\nFS: ${fsUrl}` : ''}`, 'info');
+        startUpdateTimer();
         const res = await fetch('/api/update_bundle',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fwUrl, fsUrl})});
         if(res.ok){
           const body = await res.text();
@@ -768,6 +797,7 @@
       } catch(err){
         setUpdateStatus('Update fehlgeschlagen: ' + err.message, 'error');
       } finally {
+        stopUpdateTimer();
         btnReleaseInfo.disabled = false;
         btnReleaseFlash.disabled = !releaseInfo.dataset.fwUrl;
       }

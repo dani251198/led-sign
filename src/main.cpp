@@ -463,6 +463,8 @@ bool applyConfigJson(const String &body, String &errOut) {
 bool performUpdate(const String &url, bool isFs = false) {
   HTTPClient http;
   http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+  Serial.printf("[OTA] Starte %s-Update: %s\n", isFs ? "FS" : "FW", url.c_str());
+  http.setTimeout(20000); // 20s socket timeout to survive slow links
   http.begin(url);
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
@@ -472,6 +474,7 @@ bool performUpdate(const String &url, bool isFs = false) {
   }
 
   int len = http.getSize();
+  Serial.printf("[OTA] HTTP OK, size=%d Bytes (kann -1 sein)\n", len);
   WiFiClient *stream = http.getStreamPtr();
   if (!Update.begin(len, isFs ? U_SPIFFS : U_FLASH)) {
     Serial.println("Not enough space for update");
@@ -479,8 +482,41 @@ bool performUpdate(const String &url, bool isFs = false) {
     return false;
   }
 
-  size_t written = Update.writeStream(*stream);
-  if (written != (size_t)len) {
+  const size_t bufSize = 1024;
+  uint8_t buf[bufSize];
+  size_t written = 0;
+  unsigned long lastProgress = millis();
+  const unsigned long timeoutMs = 60000; // 60s ohne Fortschritt => Abbruch
+
+  while (stream->connected() && (len < 0 || written < (size_t)len)) {
+    size_t avail = stream->available();
+    if (avail) {
+      size_t toRead = avail > bufSize ? bufSize : avail;
+      int r = stream->readBytes(buf, toRead);
+      if (r > 0) {
+        if (Update.write(buf, r) != r) {
+          Serial.println("[OTA] Write error");
+          http.end();
+          return false;
+        }
+        written += r;
+        lastProgress = millis();
+        if (written % 262144 < (size_t)r) { // alle ~256KB
+          Serial.printf("[OTA] Fortschritt: %u Bytes\n", (unsigned)written);
+        }
+      }
+    } else {
+      delay(25);
+    }
+    if (millis() - lastProgress > timeoutMs) {
+      Serial.println("[OTA] Timeout ohne Fortschritt");
+      http.end();
+      return false;
+    }
+  }
+
+  Serial.printf("[OTA] Geschrieben: %u Bytes\n", (unsigned)written);
+  if (len >= 0 && written != (size_t)len) {
     Serial.println("Update incomplete");
     http.end();
     return false;
@@ -493,6 +529,7 @@ bool performUpdate(const String &url, bool isFs = false) {
   }
 
   http.end();
+  Serial.printf("[OTA] %s-Update erfolgreich, reboot folgt.\n", isFs ? "FS" : "FW");
   return Update.isFinished();
 }
 
@@ -758,6 +795,7 @@ void handleUpdate() {
   if (err) return sendJsonError("JSON parse error");
   String url = doc["url"].as<String>();
   if (url.length() == 0) return sendJsonError("url missing");
+  Serial.printf("[OTA] API /update FW: %s\n", url.c_str());
   bool ok = performUpdate(url, false);
   if (!ok) return sendJsonError("update failed");
   server.send(200, "application/json", "{\"status\":\"rebooting\"}");
@@ -772,6 +810,7 @@ void handleUpdateFs() {
   if (err) return sendJsonError("JSON parse error");
   String url = doc["url"].as<String>();
   if (url.length() == 0) return sendJsonError("url missing");
+  Serial.printf("[OTA] API /updatefs FS: %s\n", url.c_str());
   bool ok = updateFsPreserveConfig(url);
   if (!ok) return sendJsonError("update failed");
   server.send(200, "application/json", "{\"status\":\"rebooting\"}");
@@ -788,7 +827,9 @@ void handleUpdateBundle() {
   String fsUrl = doc["fsUrl"].as<String>();
   if (fwUrl.length() == 0) return sendJsonError("fwUrl missing");
 
+  Serial.printf("[OTA] API /update_bundle FW: %s\n", fwUrl.c_str());
   if (fsUrl.length() > 0) {
+    Serial.printf("[OTA] API /update_bundle FS: %s\n", fsUrl.c_str());
     if (!updateFsPreserveConfig(fsUrl)) return sendJsonError("fs update failed");
   }
 
