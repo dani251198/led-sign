@@ -44,7 +44,7 @@
   <form id="cfgForm">
     <fieldset>
       <legend>LED &amp; Modus</legend>
-      <label>LED-Anzahl <input type="number" name="ledCount" min="1" max="120"></label>
+      <p style="margin:0 0 8px; color:#475569; font-size:14px;">LED-Anzahl: 12 (fest)</p>
       <label>Helligkeit <span id="brightnessLabel">60%</span>
         <input type="range" name="brightness" min="0" max="100" value="60">
       </label>
@@ -145,6 +145,11 @@
     let latestConfig;
     let latestStatus;
     const ledPreview = document.getElementById('ledPreview');
+    const LED_COUNT = 12;
+    let previewHue = 0;
+    let previewChase = 0;
+    let previewTwinkle = new Array(LED_COUNT).fill({r:0,g:0,b:0});
+    let previewInterval = null;
 
     const dayOrder = [1,2,3,4,5,6,0];
     function dayLabel(idx){
@@ -198,7 +203,7 @@
       const coords = [
         {x:0,y:120},{x:20,y:100},{x:40,y:80},{x:60,y:60},{x:80,y:40},{x:100,y:20}, // 6 nach oben rechts
         {x:120,y:40},{x:140,y:60},{x:160,y:80},{x:180,y:100}, // 4 nach unten rechts
-        {x:160,y:120},{x:140,y:140} // 2 nach links
+        {x:160,y:120},{x:140,y:120} // 2 nach links (waagrecht)
       ];
       coords.forEach((c, idx)=>{
         const d = document.createElement('div');
@@ -211,8 +216,38 @@
     }
 
     function hexToCss(hex){
-      const h = hex || 'cccccc';
-      return `#${h.padStart(6,'0')}`;
+      const h = (hex || 'cccccc').padStart(6,'0');
+      return `#${h}`;
+    }
+
+    function hexToRgb(hex){
+      const h = (hex || '000000').padStart(6,'0');
+      const r = parseInt(h.slice(0,2),16);
+      const g = parseInt(h.slice(2,4),16);
+      const b = parseInt(h.slice(4,6),16);
+      return {r,g,b};
+    }
+
+    function rgbToCss({r,g,b}){
+      return `rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
+    }
+
+    function hsvToCss(h,s,v){
+      const f = (n)=>{
+        const k = (n + h/60) % 6;
+        return v - v*s*Math.max(Math.min(k,4-k,1),0);
+      };
+      const r = Math.round(f(5)*255);
+      const g = Math.round(f(3)*255);
+      const b = Math.round(f(1)*255);
+      return rgbToCss({r,g,b});
+    }
+
+    function stopPreviewLoop(){
+      if(previewInterval){
+        clearInterval(previewInterval);
+        previewInterval = null;
+      }
     }
 
     function updateLedPreview(){
@@ -220,29 +255,82 @@
       const cfg = latestConfig;
       if(!cfg){ return; }
       const st = latestStatus;
-      let colorHex = cfg.clockColor || 'cccccc';
-      const mode = cfg.mode;
-      if(mode === 'status'){
-        const open = st?.open;
-        colorHex = open ? (cfg.openColor || '00ff00') : (cfg.closedColor || 'ff0000');
-      } else if(mode === 'appointment'){
-        colorHex = cfg.appointmentColor || '00ffff';
-      } else if(mode === 'effect'){
-        colorHex = cfg.effectColor || 'ffffff';
-      } else {
-        colorHex = cfg.clockColor || 'ffffff';
-      }
 
-      const colorCss = hexToCss(colorHex);
+      stopPreviewLoop();
       const dots = ledPreview.querySelectorAll('.led-dot');
-      dots.forEach(d => { d.style.backgroundColor = colorCss; });
 
-      // Simple indication for rainbow effect: hue cycle animation
-      if(mode === 'effect' && (cfg.effect === 'rainbow')){
-        ledPreview.classList.add('animate-rainbow');
-      } else {
-        ledPreview.classList.remove('animate-rainbow');
+      function applyStatic(colorHex){
+        const css = hexToCss(colorHex);
+        dots.forEach(d => { d.style.backgroundColor = css; });
       }
+
+      if(cfg.mode !== 'effect'){
+        let colorHex = cfg.clockColor || 'ffffff';
+        if(cfg.mode === 'status'){
+          const open = st?.open;
+          colorHex = open ? (cfg.openColor || '00ff00') : (cfg.closedColor || 'ff0000');
+        } else if(cfg.mode === 'appointment'){
+          colorHex = cfg.appointmentColor || '00ffff';
+        }
+        applyStatic(colorHex);
+        return;
+      }
+
+      // Effect preview: mirror firmware logic
+      const step = Math.max(1, Math.min(20, cfg.effectSpeed || 4));
+      const eff = cfg.effect || 'rainbow';
+      if(eff === 'solid'){
+        applyStatic(cfg.effectColor || 'ffffff');
+        return;
+      }
+
+      previewInterval = setInterval(()=>{
+        if(eff === 'rainbow'){
+          previewHue = (previewHue + step) % 256;
+          dots.forEach((d, idx)=>{
+            const hue = ((previewHue + idx*3) % 256) * (360/255);
+            d.style.backgroundColor = hsvToCss(hue,1,1);
+          });
+        } else if(eff === 'theater'){
+          const color = hexToCss(cfg.effectColor || 'ffffff');
+          const offset = previewChase % 3;
+          dots.forEach((d, idx)=>{
+            d.style.backgroundColor = (idx % 3 === offset) ? color : '#000000';
+          });
+          previewChase = (previewChase + step) % 3;
+        } else if(eff === 'twinkle'){
+          // fade existing
+          previewTwinkle = previewTwinkle.map(c=>({
+            r: Math.max(0, c.r - 20),
+            g: Math.max(0, c.g - 20),
+            b: Math.max(0, c.b - 20)
+          }));
+          // random sparkles
+          const chance = Math.max(1, step);
+          const colorRgb = hexToRgb(cfg.effectColor || 'ffffff');
+          for(let i=0;i<LED_COUNT;i++){
+            if(Math.random()*255 < chance){
+              previewTwinkle[i] = {...colorRgb};
+            }
+          }
+          dots.forEach((d, idx)=>{ d.style.backgroundColor = rgbToCss(previewTwinkle[idx]); });
+        } else if(eff === 'breathe'){
+          const bpm = ((step - 1) * (30 - 6) / (20 - 1)) + 6; // map 1-20 -> 6-30
+          const now = performance.now();
+          const phase = (now * bpm / 60000) * 2 * Math.PI;
+          const val = (Math.sin(phase) + 1) / 2; // 0..1
+          const scale = 0.04 + val * 0.96; // match beatsin8 10..255 approx
+          const base = hexToRgb(cfg.effectColor || 'ffffff');
+          const scaled = {r: base.r*scale, g: base.g*scale, b: base.b*scale};
+          dots.forEach(d => { d.style.backgroundColor = rgbToCss(scaled); });
+        } else { // default rainbow fallback
+          previewHue = (previewHue + step) % 256;
+          dots.forEach((d, idx)=>{
+            const hue = ((previewHue + idx*3) % 256) * (360/255);
+            d.style.backgroundColor = hsvToCss(hue,1,1);
+          });
+        }
+      }, 30);
     }
 
     function buildConfigPayload(form){
@@ -253,7 +341,7 @@
         hours.push({start:start||'00:00', end:end||'00:00'});
       }
       return {
-        ledCount: Number(form.ledCount.value),
+        ledCount: LED_COUNT,
         brightness: Math.round(Number(form.brightness.value) / 100 * 255),
         mode: form.mode.value,
         effect: form.effect.value,
@@ -295,7 +383,6 @@
       const res = await fetch('/api/config');
       const cfg = await res.json();
       const form = document.getElementById('cfgForm');
-      form.ledCount.value = cfg.ledCount;
       form.brightness.value = Math.round((cfg.brightness || 0) / 255 * 100);
       brightnessLabel.textContent = `${form.brightness.value}%`;
       form.mode.value = cfg.mode;
