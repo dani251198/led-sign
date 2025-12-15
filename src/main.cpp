@@ -14,6 +14,7 @@
 #define DEFAULT_LED_COUNT 12
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
+static const char *FW_VERSION = "v0.5";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -238,12 +239,101 @@ void loadConfig() {
   }
 }
 
-void sendJsonError(const String &msg) {
+void sendJsonErrorTo(WebServer &ws, const String &msg) {
   DynamicJsonDocument doc(128);
   doc["error"] = msg;
   String out;
   serializeJson(doc, out);
-  server.send(400, "application/json", out);
+  ws.send(400, "application/json", out);
+}
+
+void sendJsonError(const String &msg) {
+  sendJsonErrorTo(server, msg);
+}
+
+String buildConfigJson() {
+  DynamicJsonDocument doc(2048);
+  doc["ledCount"] = configState.ledCount;
+  doc["brightness"] = configState.brightness;
+  doc["mode"] = configState.mode;
+  doc["tz"] = configState.tz;
+  doc["icalUrl"] = configState.icalUrl;
+  doc["appointmentTime"] = configState.appointmentTime;
+  doc["openColor"] = configState.openColor;
+  doc["closedColor"] = configState.closedColor;
+  doc["appointmentColor"] = configState.appointmentColor;
+  doc["clockColor"] = configState.clockColor;
+  doc["effect"] = configState.effect;
+  doc["effectColor"] = configState.effectColor;
+  doc["effectSpeed"] = configState.effectSpeed;
+  JsonArray hours = doc["hours"].to<JsonArray>();
+  for (int i = 0; i < 7; ++i) {
+    JsonObject h = hours.add<JsonObject>();
+    h["start"] = configState.hours[i].start;
+    h["end"] = configState.hours[i].end;
+  }
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+
+String buildStatusJson() {
+  DynamicJsonDocument doc(256);
+  time_t nowLocal = time(nullptr);
+  time_t next = nextAnyAppointment(nowLocal);
+  doc["wifi"] = WiFi.isConnected();
+  doc["ip"] = WiFi.localIP().toString();
+  doc["mode"] = configState.mode;
+  doc["open"] = isOpenNow(nowLocal);
+  doc["nextAppointment"] = (uint32_t)next;
+  doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
+  doc["notifyActive"] = (next > 0) && (difftime(next, nowLocal) <= configState.notifyMinutesBefore * 60);
+  doc["version"] = FW_VERSION;
+  String out;
+  serializeJson(doc, out);
+  return out;
+}
+
+bool applyConfigJson(const String &body, String &errOut) {
+  DynamicJsonDocument doc(2048);
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    errOut = "JSON parse error";
+    return false;
+  }
+
+  configState.ledCount = constrain((int)doc["ledCount"].as<int>(), 1, MAX_LEDS);
+  configState.brightness = doc["brightness"].as<int>();
+  if (const char *v = doc["mode"]) configState.mode = v;
+  if (const char *v = doc["tz"]) configState.tz = v;
+  if (const char *v = doc["icalUrl"]) configState.icalUrl = v;
+  if (const char *v = doc["appointmentTime"]) configState.appointmentTime = v;
+  if (doc["notifyMinutesBefore"].is<int>()) configState.notifyMinutesBefore = doc["notifyMinutesBefore"].as<int>();
+  if (const char *v = doc["openColor"]) configState.openColor = v;
+  if (const char *v = doc["closedColor"]) configState.closedColor = v;
+  if (const char *v = doc["appointmentColor"]) configState.appointmentColor = v;
+  if (const char *v = doc["clockColor"]) configState.clockColor = v;
+  if (const char *v = doc["effect"]) configState.effect = v;
+  if (const char *v = doc["effectColor"]) configState.effectColor = v;
+  if (doc["effectSpeed"].is<int>()) configState.effectSpeed = constrain(doc["effectSpeed"].as<int>(), 1, 20);
+
+  JsonArray appts = doc["appointments"].as<JsonArray>();
+  if (!appts.isNull()) {
+    configState.appointmentCount = 0;
+    for (JsonVariant v : appts) {
+      if (configState.appointmentCount >= MAX_APPOINTMENTS) break;
+      const char *t = v.as<const char *>();
+      if (t) configState.appointments[configState.appointmentCount++] = t;
+    }
+  }
+
+  JsonArray hours = doc["hours"].as<JsonArray>();
+  for (int i = 0; i < 7 && i < hours.size(); ++i) {
+    if (const char *s = hours[i]["start"]) configState.hours[i].start = s;
+    if (const char *e = hours[i]["end"]) configState.hours[i].end = e;
+  }
+
+  return true;
 }
 
 // --------- OTA update from URL ---------
@@ -415,86 +505,19 @@ void handleLeds(time_t nowLocal) {
 
 // --------- Web API ---------
 void handleConfigGet() {
-  DynamicJsonDocument doc(2048);
-  doc["ledCount"] = configState.ledCount;
-  doc["brightness"] = configState.brightness;
-  doc["mode"] = configState.mode;
-  doc["tz"] = configState.tz;
-  doc["icalUrl"] = configState.icalUrl;
-  doc["appointmentTime"] = configState.appointmentTime;
-  doc["openColor"] = configState.openColor;
-  doc["closedColor"] = configState.closedColor;
-  doc["appointmentColor"] = configState.appointmentColor;
-  doc["clockColor"] = configState.clockColor;
-  doc["effect"] = configState.effect;
-  doc["effectColor"] = configState.effectColor;
-  doc["effectSpeed"] = configState.effectSpeed;
-  JsonArray hours = doc["hours"].to<JsonArray>();
-  for (int i = 0; i < 7; ++i) {
-    JsonObject h = hours.add<JsonObject>();
-    h["start"] = configState.hours[i].start;
-    h["end"] = configState.hours[i].end;
-  }
-  String out;
-  serializeJson(doc, out);
-  server.send(200, "application/json", out);
+  server.send(200, "application/json", buildConfigJson());
 }
 
 void handleConfigPost() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  DynamicJsonDocument doc(2048);
-  DeserializationError err = deserializeJson(doc, server.arg("plain"));
-  if (err) return sendJsonError("JSON parse error");
-
-  configState.ledCount = constrain((int)doc["ledCount"].as<int>(), 1, MAX_LEDS);
-  configState.brightness = doc["brightness"].as<int>();
-  if (const char *v = doc["mode"]) configState.mode = v;
-  if (const char *v = doc["tz"]) configState.tz = v;
-  if (const char *v = doc["icalUrl"]) configState.icalUrl = v;
-  if (const char *v = doc["appointmentTime"]) configState.appointmentTime = v;
-  if (doc["notifyMinutesBefore"].is<int>()) configState.notifyMinutesBefore = doc["notifyMinutesBefore"].as<int>();
-  if (const char *v = doc["openColor"]) configState.openColor = v;
-  if (const char *v = doc["closedColor"]) configState.closedColor = v;
-  if (const char *v = doc["appointmentColor"]) configState.appointmentColor = v;
-  if (const char *v = doc["clockColor"]) configState.clockColor = v;
-  if (const char *v = doc["effect"]) configState.effect = v;
-  if (const char *v = doc["effectColor"]) configState.effectColor = v;
-  if (doc["effectSpeed"].is<int>()) configState.effectSpeed = constrain(doc["effectSpeed"].as<int>(), 1, 20);
-
-  JsonArray appts = doc["appointments"].as<JsonArray>();
-  if (!appts.isNull()) {
-    configState.appointmentCount = 0;
-    for (JsonVariant v : appts) {
-      if (configState.appointmentCount >= MAX_APPOINTMENTS) break;
-      const char *t = v.as<const char *>();
-      if (t) configState.appointments[configState.appointmentCount++] = t;
-    }
-  }
-
-  JsonArray hours = doc["hours"].as<JsonArray>();
-  for (int i = 0; i < 7 && i < hours.size(); ++i) {
-    if (const char *s = hours[i]["start"]) configState.hours[i].start = s;
-    if (const char *e = hours[i]["end"]) configState.hours[i].end = e;
-  }
-
+  String err;
+  if (!applyConfigJson(server.arg("plain"), err)) return sendJsonError(err);
   saveConfig();
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
 void handleStatus() {
-  DynamicJsonDocument doc(256);
-  time_t nowLocal = time(nullptr);
-  time_t next = nextAnyAppointment(nowLocal);
-  doc["wifi"] = WiFi.isConnected();
-  doc["ip"] = WiFi.localIP().toString();
-  doc["mode"] = configState.mode;
-  doc["open"] = isOpenNow(nowLocal);
-  doc["nextAppointment"] = (uint32_t)next;
-  doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
-  doc["notifyActive"] = (next > 0) && (difftime(next, nowLocal) <= configState.notifyMinutesBefore * 60);
-  String out;
-  serializeJson(doc, out);
-  server.send(200, "application/json", out);
+  server.send(200, "application/json", buildStatusJson());
 }
 
 void handleUpdate() {
@@ -660,7 +683,7 @@ void setupWifiAndTime() {
     "<li class=\"menu-item\">"
     "<a href=\"/app\" style=\"display:block;padding:10px 12px;margin:6px 0;"
     "background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;\">"
-    "LED Panel öffnen\"</a>"
+    "LED Panel Konfiguration öffnen</a>"
     "</li>"
   );
   wm.setWebServerCallback([&]() {
@@ -673,6 +696,49 @@ void setupWifiAndTime() {
       File f = LittleFS.open("/index.html", "r");
       wm.server->streamFile(f, "text/html");
       f.close();
+    });
+
+    wm.server->on("/api/config", HTTP_GET, [&wm]() {
+      wm.server->send(200, "application/json", buildConfigJson());
+    });
+
+    wm.server->on("/api/config", HTTP_POST, [&wm]() {
+      String err;
+      if (!applyConfigJson(wm.server->arg("plain"), err)) return sendJsonErrorTo(*wm.server, err);
+      saveConfig();
+      wm.server->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+
+    wm.server->on("/api/status", HTTP_GET, [&wm]() {
+      wm.server->send(200, "application/json", buildStatusJson());
+    });
+
+    wm.server->on("/api/appointments", HTTP_GET, [&wm]() {
+      DynamicJsonDocument doc(768);
+      JsonArray arr = doc.to<JsonArray>();
+      for (int i = 0; i < configState.appointmentCount; ++i) arr.add(configState.appointments[i]);
+      String out;
+      serializeJson(doc, out);
+      wm.server->send(200, "application/json", out);
+    });
+
+    wm.server->on("/api/appointments", HTTP_POST, [&wm]() {
+      DynamicJsonDocument doc(256);
+      DeserializationError err = deserializeJson(doc, wm.server->arg("plain"));
+      if (err) return sendJsonErrorTo(*wm.server, "JSON parse error");
+      String t = doc["time"].as<String>();
+      if (t.length() == 0) return sendJsonErrorTo(*wm.server, "time missing");
+      if (!addAppointment(t)) return sendJsonErrorTo(*wm.server, "invalid time or full");
+      wm.server->send(200, "application/json", "{\"status\":\"ok\"}");
+    });
+
+    wm.server->on("/api/appointments", HTTP_DELETE, [&wm]() {
+      DynamicJsonDocument doc(128);
+      DeserializationError err = deserializeJson(doc, wm.server->arg("plain"));
+      if (err) return sendJsonErrorTo(*wm.server, "JSON parse error");
+      int idx = doc["index"] | -1;
+      if (!deleteAppointment(idx)) return sendJsonErrorTo(*wm.server, "invalid index");
+      wm.server->send(200, "application/json", "{\"status\":\"ok\"}");
     });
   });
   wm.setConfigPortalTimeout(0); // no auto-timeout; stay in portal until connected

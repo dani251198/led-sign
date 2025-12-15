@@ -24,12 +24,22 @@
     ul { padding-left: 18px; }
     .actions { display: flex; justify-content: flex-end; margin-top: 12px; }
     .hidden { display: none; }
+    .led-preview { position: relative; width: 210px; height: 150px; margin: 12px 0 18px; background: #e7ecf5; border: 1px solid #d5d7e0; border-radius: 10px; }
+    .led-dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #d1d5db; box-shadow: 0 0 6px rgba(0,0,0,0.15); transition: background-color 0.2s ease, filter 1s linear; }
+    .led-preview.animate-rainbow .led-dot { animation: hue-cycle 2.4s linear infinite; }
+    @keyframes hue-cycle { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
   </style>
 </head>
 <body>
   <h1>Agentur-AoA LED</h1>
   <p class="sub">Webpanel zum Steuern von Farben, Helligkeit, Zeiten, Terminen und Updates.</p>
-  <p>Status: <span id="status">laden...</span> · Uhrzeit: <span id="clockNow">--:--</span></p>
+  <p>Status: <span id="status">laden...</span> · Uhrzeit: <span id="clockNow">--:--</span> · Version: <span id="fwVersion">--</span></p>
+
+  <div>
+    <strong>LED-Vorschau</strong>
+    <div id="ledPreview" class="led-preview"></div>
+    <small style="color:#475569;">12 LEDs angeordnet wie das "A" (Agentur für Arbeit)</small>
+  </div>
 
   <form id="cfgForm">
     <fieldset>
@@ -61,11 +71,11 @@
       <label class="mode-effect effect-color"><input type="color" name="effectColor"> Effektfarbe</label>
     </fieldset>
 
-    <fieldset>
+    <fieldset id="hoursFieldset">
       <legend>Zeiten</legend>
       <label>Zeitzone (POSIX) <input type="text" name="tz"></label>
       <div class="row" id="hours"></div>
-      <small>Format HH:MM-HH:MM, Sonntag=0 ... Samstag=6</small>
+      <small>Format HH:MM-HH:MM, Start Montag</small>
     </fieldset>
 
     <fieldset>
@@ -105,6 +115,7 @@
         <button type="button" id="btnReleaseFlash" class="btn-primary">Neueste Release flashen (FW+FS)</button>
       </div>
       <div id="releaseInfo" style="margin-top:8px; font-size:14px; color:#0f172a; white-space:pre-wrap;">Noch nicht geladen.</div>
+      <div id="updateStatus" class="hidden" style="margin-top:6px; font-size:13px; color:#0f172a;">Update-Status</div>
     </div>
   </fieldset>
 
@@ -116,6 +127,7 @@
 
   <script>
     const hoursContainer = document.getElementById('hours');
+    const hoursFieldset = document.getElementById('hoursFieldset');
     const statusEl = document.getElementById('status');
     const apptListEl = document.getElementById('apptList');
     const brightnessLabel = document.getElementById('brightnessLabel');
@@ -126,7 +138,15 @@
     const btnReleaseInfo = document.getElementById('btnReleaseInfo');
     const btnReleaseFlash = document.getElementById('btnReleaseFlash');
     const clockNowEl = document.getElementById('clockNow');
+    const fwVersionEl = document.getElementById('fwVersion');
+    const updateStatusEl = document.getElementById('updateStatus');
+    let autoSaveTimer;
+    let isLoadingConfig = false;
+    let latestConfig;
+    let latestStatus;
+    const ledPreview = document.getElementById('ledPreview');
 
+    const dayOrder = [1,2,3,4,5,6,0];
     function dayLabel(idx){
       return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
     }
@@ -143,6 +163,7 @@
       document.querySelectorAll('.mode-clock').forEach(el=>{
         el.classList.toggle('hidden', mode !== 'clock');
       });
+      hoursFieldset.classList.toggle('hidden', mode !== 'status');
       const needsColor = effect !== 'rainbow';
       const needsSpeed = effect !== 'solid';
       document.querySelectorAll('.effect-color').forEach(el=>{
@@ -156,22 +177,121 @@
 
     function buildHours(fields){
       hoursContainer.innerHTML = '';
-      for(let i=0;i<7;i++){
+      dayOrder.forEach(idx => {
         const wrap = document.createElement('div');
         const label = document.createElement('label');
-        label.textContent = `${dayLabel(i)} (HH:MM-HH:MM)`;
+        label.textContent = `${dayLabel(idx)} (HH:MM-HH:MM)`;
         const inp = document.createElement('input');
         inp.type = 'text';
-        inp.name = `h${i}`;
+        inp.name = `h${idx}`;
         inp.placeholder = '08:00-16:00';
-        if(fields && fields[i]) inp.value = `${fields[i].start}-${fields[i].end}`;
+        if(fields && fields[idx]) inp.value = `${fields[idx].start}-${fields[idx].end}`;
         label.appendChild(inp);
         wrap.appendChild(label);
         hoursContainer.appendChild(wrap);
+      });
+    }
+
+    function ensureLedDots(){
+      if(ledPreview.childElementCount === 12) return;
+      ledPreview.innerHTML = '';
+      const coords = [
+        {x:0,y:120},{x:20,y:100},{x:40,y:80},{x:60,y:60},{x:80,y:40},{x:100,y:20}, // 6 nach oben rechts
+        {x:120,y:40},{x:140,y:60},{x:160,y:80},{x:180,y:100}, // 4 nach unten rechts
+        {x:160,y:120},{x:140,y:140} // 2 nach links
+      ];
+      coords.forEach((c, idx)=>{
+        const d = document.createElement('div');
+        d.className = 'led-dot';
+        d.style.left = `${c.x}px`;
+        d.style.top = `${c.y}px`;
+        d.dataset.idx = idx;
+        ledPreview.appendChild(d);
+      });
+    }
+
+    function hexToCss(hex){
+      const h = hex || 'cccccc';
+      return `#${h.padStart(6,'0')}`;
+    }
+
+    function updateLedPreview(){
+      ensureLedDots();
+      const cfg = latestConfig;
+      if(!cfg){ return; }
+      const st = latestStatus;
+      let colorHex = cfg.clockColor || 'cccccc';
+      const mode = cfg.mode;
+      if(mode === 'status'){
+        const open = st?.open;
+        colorHex = open ? (cfg.openColor || '00ff00') : (cfg.closedColor || 'ff0000');
+      } else if(mode === 'appointment'){
+        colorHex = cfg.appointmentColor || '00ffff';
+      } else if(mode === 'effect'){
+        colorHex = cfg.effectColor || 'ffffff';
+      } else {
+        colorHex = cfg.clockColor || 'ffffff';
+      }
+
+      const colorCss = hexToCss(colorHex);
+      const dots = ledPreview.querySelectorAll('.led-dot');
+      dots.forEach(d => { d.style.backgroundColor = colorCss; });
+
+      // Simple indication for rainbow effect: hue cycle animation
+      if(mode === 'effect' && (cfg.effect === 'rainbow')){
+        ledPreview.classList.add('animate-rainbow');
+      } else {
+        ledPreview.classList.remove('animate-rainbow');
       }
     }
 
+    function buildConfigPayload(form){
+      const hours = [];
+      for(let i=0;i<7;i++){
+        const val = form[`h${i}`]?.value || '00:00-00:00';
+        const [start,end] = val.split('-');
+        hours.push({start:start||'00:00', end:end||'00:00'});
+      }
+      return {
+        ledCount: Number(form.ledCount.value),
+        brightness: Math.round(Number(form.brightness.value) / 100 * 255),
+        mode: form.mode.value,
+        effect: form.effect.value,
+        effectSpeed: Number(form.effectSpeed.value),
+        effectColor: form.effectColor.value.replace('#',''),
+        tz: form.tz.value,
+        icalUrl: form.icalUrl.value,
+        notifyMinutesBefore: Number(form.notifyMinutesBefore.value),
+        openColor: form.openColor.value.replace('#',''),
+        closedColor: form.closedColor.value.replace('#',''),
+        appointmentColor: form.appointmentColor.value.replace('#',''),
+        clockColor: form.clockColor.value.replace('#',''),
+        hours
+      };
+    }
+
+    async function postConfig(payload, {silent = true} = {}){
+      try {
+        const res = await fetch('/api/config',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        if(!res.ok && !silent){
+          alert('Speichern fehlgeschlagen: HTTP ' + res.status);
+        }
+      } catch(err){
+        if(!silent) alert('Speichern fehlgeschlagen: ' + err.message);
+      }
+    }
+
+    function scheduleAutoSave(){
+      if(isLoadingConfig) return; // avoid firing while applying fetched config
+      if(autoSaveTimer) clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(()=>{
+        const form = document.getElementById('cfgForm');
+        postConfig(buildConfigPayload(form), {silent:true});
+      }, 400);
+    }
+
     async function loadConfig(){
+      isLoadingConfig = true;
       const res = await fetch('/api/config');
       const cfg = await res.json();
       const form = document.getElementById('cfgForm');
@@ -192,6 +312,9 @@
       form.notifyMinutesBefore.value = cfg.notifyMinutesBefore ?? 30;
       buildHours(cfg.hours);
       updateModeVisibility();
+      latestConfig = cfg;
+      updateLedPreview();
+      isLoadingConfig = false;
     }
 
     modeSelect.addEventListener('change', updateModeVisibility);
@@ -199,11 +322,16 @@
 
     document.querySelector('input[name="brightness"]').addEventListener('input', (e)=>{
       brightnessLabel.textContent = `${e.target.value}%`;
+      scheduleAutoSave();
     });
 
     document.querySelector('input[name="effectSpeed"]').addEventListener('input', (e)=>{
       effectSpeedLabel.textContent = e.target.value;
+      scheduleAutoSave();
     });
+
+    document.getElementById('cfgForm').addEventListener('input', scheduleAutoSave);
+    document.getElementById('cfgForm').addEventListener('change', scheduleAutoSave);
 
     function escapeHtml(str){
       return str.replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
@@ -212,6 +340,26 @@
     function updateClockNow(){
       const d = new Date();
       clockNowEl.textContent = d.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+    }
+
+    let updateStatusTimer;
+
+    function setUpdateStatus(text = '', tone = 'info', clearAfterMs = 0){
+      if(updateStatusTimer){
+        clearTimeout(updateStatusTimer);
+        updateStatusTimer = null;
+      }
+      if(!text){
+        updateStatusEl.textContent = '';
+        updateStatusEl.classList.add('hidden');
+        return;
+      }
+      updateStatusEl.textContent = text;
+      updateStatusEl.style.color = tone === 'error' ? '#b91c1c' : '#0f172a';
+      updateStatusEl.classList.remove('hidden');
+      if(clearAfterMs > 0){
+        updateStatusTimer = setTimeout(()=>setUpdateStatus('', tone, 0), clearAfterMs);
+      }
     }
 
     async function loadLatestRelease(){
@@ -293,35 +441,19 @@
         const res = await fetch('/api/status');
         const st = await res.json();
         statusEl.textContent = st.wifi ? `Online: ${st.ip} Mode=${st.mode}` : 'Offline';
-      } catch(err){ statusEl.textContent = 'Keine Verbindung'; }
+        fwVersionEl.textContent = st.version || '--';
+        latestStatus = st;
+        updateLedPreview();
+      } catch(err){
+        statusEl.textContent = 'Keine Verbindung';
+        fwVersionEl.textContent = '--';
+      }
     }
 
     document.getElementById('cfgForm').addEventListener('submit', async (e)=>{
       e.preventDefault();
       const form = e.target;
-      const hours = [];
-      for(let i=0;i<7;i++){
-        const val = form[`h${i}`].value || '00:00-00:00';
-        const [start,end] = val.split('-');
-        hours.push({start:start||'00:00', end:end||'00:00'});
-      }
-      const payload = {
-        ledCount: Number(form.ledCount.value),
-        brightness: Math.round(Number(form.brightness.value) / 100 * 255),
-        mode: form.mode.value,
-        effect: form.effect.value,
-        effectSpeed: Number(form.effectSpeed.value),
-        effectColor: form.effectColor.value.replace('#',''),
-        tz: form.tz.value,
-        icalUrl: form.icalUrl.value,
-        notifyMinutesBefore: Number(form.notifyMinutesBefore.value),
-        openColor: form.openColor.value.replace('#',''),
-        closedColor: form.closedColor.value.replace('#',''),
-        appointmentColor: form.appointmentColor.value.replace('#',''),
-        clockColor: form.clockColor.value.replace('#',''),
-        hours
-      };
-      await fetch('/api/config',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      await postConfig(buildConfigPayload(form), {silent:false});
       alert('Gespeichert.');
     });
 
@@ -339,16 +471,30 @@
     });
 
     async function flashRelease(){
-      await loadLatestRelease();
-      const fwUrl = releaseInfo.dataset.fwUrl;
-      const fsUrl = releaseInfo.dataset.fsUrl;
-      if(!fwUrl){
-        alert('Keine Firmware-URL gefunden.');
-        return;
+      setUpdateStatus('Lade Release-Infos...', 'info');
+      btnReleaseInfo.disabled = true;
+      btnReleaseFlash.disabled = true;
+      try {
+        await loadLatestRelease();
+        const fwUrl = releaseInfo.dataset.fwUrl;
+        const fsUrl = releaseInfo.dataset.fsUrl;
+        if(!fwUrl){
+          setUpdateStatus('Keine Firmware-URL gefunden.', 'error');
+          return;
+        }
+        setUpdateStatus('Update wird gestartet...', 'info');
+        const res = await fetch('/api/update_bundle',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fwUrl, fsUrl})});
+        if(res.ok){
+          setUpdateStatus('Update läuft – Gerät rebootet gleich. Bitte ca. 1 Minute warten.', 'info', 70000);
+        } else {
+          setUpdateStatus('Update fehlgeschlagen: HTTP ' + res.status, 'error');
+        }
+      } catch(err){
+        setUpdateStatus('Update fehlgeschlagen: ' + err.message, 'error');
+      } finally {
+        btnReleaseInfo.disabled = false;
+        btnReleaseFlash.disabled = !releaseInfo.dataset.fwUrl;
       }
-      const res = await fetch('/api/update_bundle',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fwUrl, fsUrl})});
-      if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
-      else{ alert('Update fehlgeschlagen'); }
     }
 
     btnReleaseFlash.addEventListener('click', flashRelease);
