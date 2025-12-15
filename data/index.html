@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Felix AoA Control</title>
+  <style>
+    :root { color-scheme: light; }
+    body { font-family: system-ui, sans-serif; margin: 16px; background: #f4f6fb; color: #0f172a; }
+    h1 { margin-bottom: 4px; }
+    .sub { color: #475569; margin-top: 0; }
+    fieldset { margin-bottom: 16px; border: 1px solid #d5d7e0; padding: 12px 14px; border-radius: 10px; background: #ffffff; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
+    legend { padding: 0 6px; font-weight: 600; }
+    label { display: block; margin: 8px 0; font-size: 14px; color: #0f172a; }
+    input[type="text"], input[type="number"], select { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #cfd2dc; border-radius: 6px; color: #0f172a; background: #fff; }
+    input[type="range"] { width: 100%; }
+    input::placeholder { color: #94a3b8; }
+    button { padding: 8px 12px; border-radius: 6px; border: 1px solid #c0c4d3; background: #fff; cursor: pointer; color: #0f172a; }
+    button:hover { background: #eef1f9; }
+    .btn-primary { background: #2563eb; border-color: #1d4ed8; color: #fff; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; }
+    .inline { display: inline-flex; align-items: center; gap: 8px; }
+    ul { padding-left: 18px; }
+    .actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <h1>Agentur-AoA LED</h1>
+  <p class="sub">Webpanel zum Steuern von Farben, Helligkeit, Zeiten, Terminen und Updates.</p>
+  <p>Status: <span id="status">laden...</span></p>
+
+  <form id="cfgForm">
+    <fieldset>
+      <legend>LED &amp; Modus</legend>
+      <label>LED-Anzahl <input type="number" name="ledCount" min="1" max="120"></label>
+      <label>Helligkeit <span id="brightnessLabel">60%</span>
+        <input type="range" name="brightness" min="0" max="100" value="60">
+      </label>
+      <label>Mode
+        <select name="mode">
+          <option value="clock">Clock</option>
+          <option value="status">Status (Open/Closed)</option>
+          <option value="appointment">Termin</option>
+          <option value="effect">Effekt</option>
+        </select>
+      </label>
+      <label class="mode-effect">Effekt
+        <select name="effect">
+          <option value="rainbow">Rainbow</option>
+          <option value="solid">Solid</option>
+          <option value="breathe">Breathe</option>
+          <option value="theater">Theater Chase</option>
+          <option value="twinkle">Twinkle</option>
+        </select>
+      </label>
+      <label class="mode-effect effect-speed">Effekt-Geschwindigkeit <span id="effectSpeedLabel">4</span>
+        <input type="range" name="effectSpeed" min="1" max="20" value="4">
+      </label>
+      <label class="mode-effect effect-color"><input type="color" name="effectColor"> Effektfarbe</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Zeiten</legend>
+      <label>Zeitzone (POSIX) <input type="text" name="tz"></label>
+      <div class="row" id="hours"></div>
+      <small>Format HH:MM-HH:MM, Sonntag=0 ... Samstag=6</small>
+    </fieldset>
+
+    <fieldset>
+      <legend>Farben</legend>
+      <label class="mode-status"><input type="color" name="openColor"> Offen</label>
+      <label class="mode-status"><input type="color" name="closedColor"> Geschlossen</label>
+      <label><input type="color" name="appointmentColor"> Termin</label>
+      <label class="mode-clock"><input type="color" name="clockColor"> Uhr</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Termine</legend>
+      <label>iCal URL <input type="text" name="icalUrl" placeholder="https://..."></label>
+      <label>Vorwarnzeit (Minuten vor Termin)
+        <input type="number" name="notifyMinutesBefore" min="0" max="1440" value="30">
+      </label>
+      <label>Neuer Termin (deutsches Format: TT.MM.JJJJ HH:MM)
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="newAppointment" style="flex:1;" placeholder="24.12.2025 10:30">
+          <button type="button" id="btnAddAppt">Hinzufügen</button>
+        </div>
+      </label>
+      <div id="apptList"></div>
+    </fieldset>
+
+    <div class="actions">
+      <button type="submit" class="btn-primary">Speichern</button>
+    </div>
+  </form>
+
+  <fieldset>
+    <legend>OTA Update</legend>
+    <label>Firmware URL <input type="text" id="fwUrl" placeholder="https://github.com/user/repo/releases/download/v1/firmware.bin"></label>
+    <button id="btnUpdate">Update &amp; Reboot</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>WLAN</legend>
+    <p>Setzt gespeicherte WLAN-Zugangsdaten zurück und startet das Gerät neu. Danach erscheint wieder das Setup-WLAN.</p>
+    <button id="btnWifiReset" type="button">WLAN zurücksetzen</button>
+  </fieldset>
+
+  <script>
+    const hoursContainer = document.getElementById('hours');
+    const statusEl = document.getElementById('status');
+    const apptListEl = document.getElementById('apptList');
+    const brightnessLabel = document.getElementById('brightnessLabel');
+    const modeSelect = document.querySelector('select[name="mode"]');
+    const effectSelect = document.querySelector('select[name="effect"]');
+    const effectSpeedLabel = document.getElementById('effectSpeedLabel');
+
+    function dayLabel(idx){
+      return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
+    }
+
+    function updateModeVisibility(){
+      const mode = modeSelect.value;
+      const effect = effectSelect.value;
+      document.querySelectorAll('.mode-effect').forEach(el=>{
+        el.classList.toggle('hidden', mode !== 'effect');
+      });
+      document.querySelectorAll('.mode-status').forEach(el=>{
+        el.classList.toggle('hidden', mode !== 'status');
+      });
+      document.querySelectorAll('.mode-clock').forEach(el=>{
+        el.classList.toggle('hidden', mode !== 'clock');
+      });
+      const needsColor = effect !== 'rainbow';
+      const needsSpeed = effect !== 'solid';
+      document.querySelectorAll('.effect-color').forEach(el=>{
+        el.classList.toggle('hidden', !(mode === 'effect' && needsColor));
+      });
+      document.querySelectorAll('.effect-speed').forEach(el=>{
+        el.classList.toggle('hidden', !(mode === 'effect' && needsSpeed));
+      });
+      // Termin-Bereich bleibt immer sichtbar.
+    }
+
+    function buildHours(fields){
+      hoursContainer.innerHTML = '';
+      for(let i=0;i<7;i++){
+        const wrap = document.createElement('div');
+        const label = document.createElement('label');
+        label.textContent = `${dayLabel(i)} (HH:MM-HH:MM)`;
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.name = `h${i}`;
+        inp.placeholder = '08:00-16:00';
+        if(fields && fields[i]) inp.value = `${fields[i].start}-${fields[i].end}`;
+        label.appendChild(inp);
+        wrap.appendChild(label);
+        hoursContainer.appendChild(wrap);
+      }
+    }
+
+    async function loadConfig(){
+      const res = await fetch('/api/config');
+      const cfg = await res.json();
+      const form = document.getElementById('cfgForm');
+      form.ledCount.value = cfg.ledCount;
+      form.brightness.value = Math.round((cfg.brightness || 0) / 255 * 100);
+      brightnessLabel.textContent = `${form.brightness.value}%`;
+      form.mode.value = cfg.mode;
+      form.effect.value = cfg.effect || 'rainbow';
+      form.effectSpeed.value = cfg.effectSpeed ?? 4;
+      effectSpeedLabel.textContent = form.effectSpeed.value;
+      form.effectColor.value = `#${cfg.effectColor || 'ffffff'}`;
+      form.tz.value = cfg.tz;
+      form.openColor.value = `#${cfg.openColor || '00ff00'}`;
+      form.closedColor.value = `#${cfg.closedColor || 'ff0000'}`;
+      form.appointmentColor.value = `#${cfg.appointmentColor || '00ffff'}`;
+      form.clockColor.value = `#${cfg.clockColor || 'ffffff'}`;
+      form.icalUrl.value = cfg.icalUrl || '';
+      form.notifyMinutesBefore.value = cfg.notifyMinutesBefore ?? 30;
+      buildHours(cfg.hours);
+      updateModeVisibility();
+    }
+
+    modeSelect.addEventListener('change', updateModeVisibility);
+    effectSelect.addEventListener('change', updateModeVisibility);
+
+    document.querySelector('input[name="brightness"]').addEventListener('input', (e)=>{
+      brightnessLabel.textContent = `${e.target.value}%`;
+    });
+
+    document.querySelector('input[name="effectSpeed"]').addEventListener('input', (e)=>{
+      effectSpeedLabel.textContent = e.target.value;
+    });
+
+    function toIsoFromGerman(val){
+      // Accept DD.MM.YYYY HH:MM and fallback to passthrough
+      const parts = val.trim().split(' ');
+      if(parts.length !== 2) return val;
+      const [dmy, hm] = parts;
+      const d = dmy.split('.');
+      if(d.length !== 3) return val;
+      const [dd, mm, yyyy] = d;
+      if(dd.length < 1 || mm.length < 1 || yyyy.length !== 4) return val;
+      return `${yyyy}-${mm.padStart(2,'0')}-${dd.padStart(2,'0')} ${hm}`;
+    }
+
+    function toGermanDisplay(val){
+      // Expect YYYY-MM-DD HH:MM
+      if(!val || val.length < 16) return val;
+      const date = val.substring(0,10).split('-');
+      if(date.length !== 3) return val;
+      const [y,m,d] = date;
+      const hm = val.substring(11,16);
+      return `${d}.${m}.${y} ${hm}`;
+    }
+
+    async function loadAppointments(){
+      const res = await fetch('/api/appointments');
+      const arr = await res.json();
+      apptListEl.innerHTML = '';
+      if(!Array.isArray(arr) || arr.length === 0){
+        apptListEl.textContent = 'Keine Termine gesetzt.';
+        return;
+      }
+      const list = document.createElement('ul');
+      arr.forEach((t, idx)=>{
+        const li = document.createElement('li');
+        li.textContent = toGermanDisplay(t);
+        const btn = document.createElement('button');
+        btn.textContent = 'Löschen';
+        btn.style.marginLeft = '8px';
+        btn.addEventListener('click', async ()=>{
+          const res = await fetch('/api/appointments',{method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index: idx})});
+          if(res.ok) loadAppointments();
+          else alert('Konnte Termin nicht löschen');
+        });
+        li.appendChild(btn);
+        list.appendChild(li);
+      });
+      apptListEl.appendChild(list);
+    }
+
+    async function loadStatus(){
+      try{
+        const res = await fetch('/api/status');
+        const st = await res.json();
+        statusEl.textContent = st.wifi ? `Online: ${st.ip} Mode=${st.mode}` : 'Offline';
+      } catch(err){ statusEl.textContent = 'Keine Verbindung'; }
+    }
+
+    document.getElementById('cfgForm').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const form = e.target;
+      const hours = [];
+      for(let i=0;i<7;i++){
+        const val = form[`h${i}`].value || '00:00-00:00';
+        const [start,end] = val.split('-');
+        hours.push({start:start||'00:00', end:end||'00:00'});
+      }
+      const payload = {
+        ledCount: Number(form.ledCount.value),
+        brightness: Math.round(Number(form.brightness.value) / 100 * 255),
+        mode: form.mode.value,
+        effect: form.effect.value,
+        effectSpeed: Number(form.effectSpeed.value),
+        effectColor: form.effectColor.value.replace('#',''),
+        tz: form.tz.value,
+        icalUrl: form.icalUrl.value,
+        notifyMinutesBefore: Number(form.notifyMinutesBefore.value),
+        openColor: form.openColor.value.replace('#',''),
+        closedColor: form.closedColor.value.replace('#',''),
+        appointmentColor: form.appointmentColor.value.replace('#',''),
+        clockColor: form.clockColor.value.replace('#',''),
+        hours
+      };
+      await fetch('/api/config',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+      alert('Gespeichert.');
+    });
+
+    document.getElementById('btnAddAppt').addEventListener('click', async ()=>{
+      const val = document.getElementById('newAppointment').value.trim();
+      if(!val) return alert('Bitte Termin angeben');
+      const iso = toIsoFromGerman(val);
+      const res = await fetch('/api/appointments',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({time: iso})});
+      if(res.ok){
+        document.getElementById('newAppointment').value = '';
+        loadAppointments();
+      } else {
+        alert('Termin ungültig oder Liste voll (max 10).');
+      }
+    });
+
+    document.getElementById('btnUpdate').addEventListener('click', async ()=>{
+      const url = document.getElementById('fwUrl').value;
+      if(!url) return alert('URL fehlt');
+      const res = await fetch('/api/update',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
+      if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
+      else{ alert('Update fehlgeschlagen'); }
+    });
+
+    document.getElementById('btnWifiReset').addEventListener('click', async ()=>{
+      if(!confirm('Wirklich WLAN-Zugangsdaten löschen und neu starten?')) return;
+      const res = await fetch('/api/wifi/reset',{method:'POST'});
+      if(res.ok){ alert('Gerät startet neu und öffnet das Setup-WLAN.'); }
+      else { alert('Konnte WLAN-Reset nicht ausführen.'); }
+    });
+
+    loadConfig();
+    loadAppointments();
+    loadStatus();
+    setInterval(loadStatus, 5000);
+  </script>
+
+  <p style="margin-top:24px; color:#475569; font-size:13px; text-align:center;">
+    Made with love <3 through vibe coding and GPT-5.1-Codex-Max by Dan und Sammy
+  </p>
+</body>
+</html>
