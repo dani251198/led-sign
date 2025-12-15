@@ -609,7 +609,11 @@ void setupServer() {
 void setupWifiAndTime() {
   WiFi.mode(WIFI_STA);
   WiFiManager wm;
-  wm.setCustomMenuHTML("<li class=\"menu-item\"><a href=\"/app\">LED Panel</a></li>");
+  wm.setCustomMenuHTML(
+      "<div style='text-align:center;padding:8px;'>"
+      "<a style='display:inline-block;padding:8px 14px;border:1px solid #ccc;border-radius:6px;"
+      "background:#eef;text-decoration:none;font-weight:600;color:#111;' href=\"/app\">LED Panel öffnen</a>"
+      "</div>");
   wm.setWebServerCallback([&]() {
     if (!wm.server) return;
     wm.server->on("/app", [&wm]() {
