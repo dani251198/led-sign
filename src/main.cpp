@@ -249,6 +249,7 @@ void sendJsonError(const String &msg) {
 // --------- OTA update from URL ---------
 bool performUpdate(const String &url, bool isFs = false) {
   HTTPClient http;
+  http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
   http.begin(url);
   int httpCode = http.GET();
   if (httpCode != HTTP_CODE_OK) {
@@ -606,6 +607,16 @@ void setupServer() {
   server.on("/api/appointments", HTTP_DELETE, handleAppointmentsDelete);
   server.on("/api/wifi/reset", HTTP_POST, handleWifiReset);
 
+  server.on("/app", [](){
+    File f = LittleFS.open("/index.html", "r");
+    if (!f) {
+      server.send(404, "text/plain", "index.html not found");
+      return;
+    }
+    server.streamFile(f, "text/html");
+    f.close();
+  });
+
   server.on("/", [](){
     File f = LittleFS.open("/index.html", "r");
     if (!f) {
@@ -619,8 +630,9 @@ void setupServer() {
   server.onNotFound([](){
     String path = server.uri();
     if (path == "/") path = "/index.html";
+    File f;
     if (LittleFS.exists(path)) {
-      File f = LittleFS.open(path, "r");
+      f = LittleFS.open(path, "r");
       if (f) {
         server.streamFile(f, contentTypeForPath(path));
         f.close();
