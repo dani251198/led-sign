@@ -98,16 +98,11 @@
 
   <fieldset>
     <legend>OTA Update</legend>
-    <label>Firmware URL <input type="text" id="fwUrl" placeholder="https://github.com/user/repo/releases/download/v1/firmware.bin"></label>
-    <button id="btnUpdate">Update &amp; Reboot</button>
-    <label style="margin-top:8px;">Filesystem URL <input type="text" id="fsUrl" placeholder="https://github.com/user/repo/releases/download/v1/littlefs.bin"></label>
-    <button id="btnUpdateFs">Filesystem flashen &amp; Reboot</button>
     <div style="margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
       <div class="inline" style="gap:8px;">
-        <strong>Release Check</strong>
-        <button type="button" id="btnCheckRelease">Neueste Version laden</button>
-        <button type="button" id="btnReleaseUpdate" class="btn-primary" disabled>Firmware flashen</button>
-        <button type="button" id="btnReleaseUpdateFs" class="btn-primary" disabled>FS flashen</button>
+        <strong>Release</strong>
+        <button type="button" id="btnReleaseInfo">Aktualisieren</button>
+        <button type="button" id="btnReleaseFlash" class="btn-primary">Neueste Release flashen (FW+FS)</button>
       </div>
       <div id="releaseInfo" style="margin-top:8px; font-size:14px; color:#0f172a; white-space:pre-wrap;">Noch nicht geladen.</div>
     </div>
@@ -128,9 +123,8 @@
     const effectSelect = document.querySelector('select[name="effect"]');
     const effectSpeedLabel = document.getElementById('effectSpeedLabel');
     const releaseInfo = document.getElementById('releaseInfo');
-    const btnCheckRelease = document.getElementById('btnCheckRelease');
-    const btnReleaseUpdate = document.getElementById('btnReleaseUpdate');
-    const btnReleaseUpdateFs = document.getElementById('btnReleaseUpdateFs');
+    const btnReleaseInfo = document.getElementById('btnReleaseInfo');
+    const btnReleaseFlash = document.getElementById('btnReleaseFlash');
 
     function dayLabel(idx){
       return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
@@ -216,8 +210,6 @@
 
     async function loadLatestRelease(){
       releaseInfo.textContent = 'Lade...';
-      btnReleaseUpdate.disabled = true;
-      btnReleaseUpdateFs.disabled = true;
       try {
         const res = await fetch('https://api.github.com/repos/dani251198/led-sign/releases/latest', {headers:{'Accept':'application/vnd.github+json'}});
         if(!res.ok) throw new Error('HTTP ' + res.status);
@@ -230,20 +222,17 @@
         releaseInfo.innerHTML = `Version: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${assetFw.name}` : '\nKeine Firmware-Asset gefunden'}${fsUrl ? `\nFilesystem: ${assetFs.name}` : '\nKein Filesystem-Asset gefunden'}`;
         releaseInfo.dataset.fwUrl = fwUrl;
         releaseInfo.dataset.fsUrl = fsUrl;
-        btnReleaseUpdate.disabled = !fwUrl;
-        btnReleaseUpdateFs.disabled = !fsUrl;
-        if(fwUrl) btnReleaseUpdate.textContent = `Firmware flashen (${data.tag_name || assetFw.name})`;
-        if(fsUrl) btnReleaseUpdateFs.textContent = `FS flashen (${data.tag_name || assetFs.name})`;
+        btnReleaseFlash.disabled = !fwUrl;
+        if(fwUrl) btnReleaseFlash.textContent = fsUrl ? `Neueste Release flashen (FW+FS ${data.tag_name || ''})` : `Neueste Release flashen (nur FW ${data.tag_name || ''})`;
       } catch(err){
         releaseInfo.textContent = 'Fehler: ' + err.message;
         releaseInfo.dataset.fwUrl = '';
         releaseInfo.dataset.fsUrl = '';
-        btnReleaseUpdate.disabled = true;
-        btnReleaseUpdateFs.disabled = true;
+        btnReleaseFlash.disabled = true;
       }
     }
 
-    btnCheckRelease.addEventListener('click', loadLatestRelease);
+    btnReleaseInfo.addEventListener('click', loadLatestRelease);
 
     function toIsoFromGerman(val){
       // Accept DD.MM.YYYY HH:MM and fallback to passthrough
@@ -343,43 +332,20 @@
       }
     });
 
-    document.getElementById('btnUpdate').addEventListener('click', async ()=>{
-      const url = document.getElementById('fwUrl').value;
-      if(!url) return alert('URL fehlt');
-      const res = await fetch('/api/update',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
-      if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
-      else{ alert('Update fehlgeschlagen'); }
-    });
-
-    document.getElementById('btnUpdateFs').addEventListener('click', async ()=>{
-      const url = document.getElementById('fsUrl').value;
-      if(!url) return alert('URL fehlt');
-      const res = await fetch('/api/updatefs',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
-      if(res.ok){ alert('Filesystem-Update gestartet, Gerät rebootet.'); }
-      else{ alert('Update fehlgeschlagen'); }
-    });
-
-    btnReleaseUpdate.addEventListener('click', async ()=>{
+    async function flashRelease(){
+      await loadLatestRelease();
       const fwUrl = releaseInfo.dataset.fwUrl;
+      const fsUrl = releaseInfo.dataset.fsUrl;
       if(!fwUrl){
-        alert('Keine Firmware-URL gefunden. Bitte Release laden.');
+        alert('Keine Firmware-URL gefunden.');
         return;
       }
-      const res = await fetch('/api/update',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: fwUrl})});
+      const res = await fetch('/api/update_bundle',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fwUrl, fsUrl})});
       if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
       else{ alert('Update fehlgeschlagen'); }
-    });
+    }
 
-    btnReleaseUpdateFs.addEventListener('click', async ()=>{
-      const fsUrl = releaseInfo.dataset.fsUrl;
-      if(!fsUrl){
-        alert('Keine Filesystem-URL gefunden. Bitte Release laden.');
-        return;
-      }
-      const res = await fetch('/api/updatefs',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: fsUrl})});
-      if(res.ok){ alert('Filesystem-Update gestartet, Gerät rebootet.'); }
-      else{ alert('Update fehlgeschlagen'); }
-    });
+    btnReleaseFlash.addEventListener('click', flashRelease);
 
     document.getElementById('btnWifiReset').addEventListener('click', async ()=>{
       if(!confirm('Wirklich WLAN-Zugangsdaten löschen und neu starten?')) return;

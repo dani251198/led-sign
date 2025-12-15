@@ -524,6 +524,26 @@ void handleUpdateFs() {
   ESP.restart();
 }
 
+void handleUpdateBundle() {
+  if (server.method() != HTTP_POST) return sendJsonError("POST required");
+  StaticJsonDocument<384> doc;
+  DeserializationError err = deserializeJson(doc, server.arg("plain"));
+  if (err) return sendJsonError("JSON parse error");
+  String fwUrl = doc["fwUrl"].as<String>();
+  String fsUrl = doc["fsUrl"].as<String>();
+  if (fwUrl.length() == 0) return sendJsonError("fwUrl missing");
+
+  if (fsUrl.length() > 0) {
+    if (!performUpdate(fsUrl, true)) return sendJsonError("fs update failed");
+  }
+
+  if (!performUpdate(fwUrl, false)) return sendJsonError("fw update failed");
+
+  server.send(200, "application/json", "{\"status\":\"rebooting\"}");
+  delay(500);
+  ESP.restart();
+}
+
 void handleAppointmentsGet() {
   StaticJsonDocument<768> doc;
   JsonArray arr = doc.to<JsonArray>();
@@ -563,18 +583,29 @@ void handleWifiReset() {
   ESP.restart();
 }
 
+String contentTypeForPath(const String &path) {
+  if (path.endsWith(".html")) return "text/html";
+  if (path.endsWith(".css")) return "text/css";
+  if (path.endsWith(".js")) return "application/javascript";
+  if (path.endsWith(".json")) return "application/json";
+  if (path.endsWith(".svg")) return "image/svg+xml";
+  if (path.endsWith(".png")) return "image/png";
+  if (path.endsWith(".ico")) return "image/x-icon";
+  return "application/octet-stream";
+}
+
 void setupServer() {
   server.on("/api/config", HTTP_GET, handleConfigGet);
   server.on("/api/config", HTTP_POST, handleConfigPost);
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/update", HTTP_POST, handleUpdate);
   server.on("/api/updatefs", HTTP_POST, handleUpdateFs);
+  server.on("/api/update_bundle", HTTP_POST, handleUpdateBundle);
   server.on("/api/appointments", HTTP_GET, handleAppointmentsGet);
   server.on("/api/appointments", HTTP_POST, handleAppointmentsPost);
   server.on("/api/appointments", HTTP_DELETE, handleAppointmentsDelete);
   server.on("/api/wifi/reset", HTTP_POST, handleWifiReset);
-  // Serve static files; handle root explicitly
-  server.serveStatic("/", LittleFS, "/");
+
   server.on("/", [](){
     File f = LittleFS.open("/index.html", "r");
     if (!f) {
@@ -584,17 +615,18 @@ void setupServer() {
     server.streamFile(f, "text/html");
     f.close();
   });
+
   server.onNotFound([](){
     String path = server.uri();
+    if (path == "/") path = "/index.html";
     if (LittleFS.exists(path)) {
       File f = LittleFS.open(path, "r");
       if (f) {
-        server.streamFile(f, "application/octet-stream");
+        server.streamFile(f, contentTypeForPath(path));
         f.close();
         return;
       }
     }
-    // fallback to index for SPA-like routing
     File f = LittleFS.open("/index.html", "r");
     if (f) {
       server.streamFile(f, "text/html");
@@ -603,17 +635,16 @@ void setupServer() {
       server.send(404, "text/plain", "Not Found");
     }
   });
+
   server.begin();
 }
 
 void setupWifiAndTime() {
   WiFi.mode(WIFI_STA);
   WiFiManager wm;
-  wm.setCustomMenuHTML(
-      "<div style='text-align:center;padding:8px;'>"
-      "<a style='display:inline-block;padding:8px 14px;border:1px solid #ccc;border-radius:6px;"
-      "background:#eef;text-decoration:none;font-weight:600;color:#111;' href=\"/app\">LED Panel öffnen</a>"
-      "</div>");
+  std::vector<const char*> menu = {"wifi", "info", "custom", "exit"};
+  wm.setMenu(menu);
+  wm.setCustomMenuHTML("<li class=\"menu-item\"><a href=\"/app\">LED Panel öffnen</a></li>");
   wm.setWebServerCallback([&]() {
     if (!wm.server) return;
     wm.server->on("/app", [&wm]() {
@@ -626,11 +657,9 @@ void setupWifiAndTime() {
       f.close();
     });
   });
-  wm.setConfigPortalTimeout(180);
+  wm.setConfigPortalTimeout(0); // no auto-timeout; stay in portal until connected
   if (!wm.autoConnect("Felix-AoA-Setup")) {
-    Serial.println("Failed to connect, restarting");
-    delay(1000);
-    ESP.restart();
+    Serial.println("Config portal active, waiting for credentials");
   }
   Serial.print("Connected: ");
   Serial.println(WiFi.localIP());
