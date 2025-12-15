@@ -756,12 +756,14 @@
           setUpdateStatus('Keine Firmware-URL gefunden.', 'error');
           return;
         }
-        setUpdateStatus('Update wird gestartet...', 'info');
+        setUpdateStatus(`Starte Update...\nFW: ${fwUrl}${fsUrl ? `\nFS: ${fsUrl}` : ''}`, 'info');
         const res = await fetch('/api/update_bundle',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({fwUrl, fsUrl})});
         if(res.ok){
-          setUpdateStatus('Update läuft – Gerät rebootet gleich. Bitte ca. 1 Minute warten.', 'info', 70000);
+          const body = await res.text();
+          setUpdateStatus('Download/Flash läuft – Gerät rebootet gleich. Bitte ca. 1 Minute warten.\nAntwort: ' + body, 'info', 80000);
         } else {
-          setUpdateStatus('Update fehlgeschlagen: HTTP ' + res.status, 'error');
+          const body = await res.text();
+          setUpdateStatus(`Update fehlgeschlagen: HTTP ${res.status}${body ? ` – ${body}` : ''}`, 'error');
         }
       } catch(err){
         setUpdateStatus('Update fehlgeschlagen: ' + err.message, 'error');
@@ -789,7 +791,7 @@
   </script>
 
   <p style="margin-top:24px; color:#475569; font-size:13px; text-align:center;">
-    Made with love <3 through vibe coding and GPT-5.1-Codex-Max by Dan und Sammy
+    Made with ♥️ through vibe coding and GPT-5.1-Codex-Max by Dan und Sammy
   </p>
 </body>
 </html>
