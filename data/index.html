@@ -100,11 +100,14 @@
     <legend>OTA Update</legend>
     <label>Firmware URL <input type="text" id="fwUrl" placeholder="https://github.com/user/repo/releases/download/v1/firmware.bin"></label>
     <button id="btnUpdate">Update &amp; Reboot</button>
+    <label style="margin-top:8px;">Filesystem URL <input type="text" id="fsUrl" placeholder="https://github.com/user/repo/releases/download/v1/littlefs.bin"></label>
+    <button id="btnUpdateFs">Filesystem flashen &amp; Reboot</button>
     <div style="margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
       <div class="inline" style="gap:8px;">
         <strong>Release Check</strong>
         <button type="button" id="btnCheckRelease">Neueste Version laden</button>
-        <button type="button" id="btnReleaseUpdate" class="btn-primary" disabled>Release flashen</button>
+        <button type="button" id="btnReleaseUpdate" class="btn-primary" disabled>Firmware flashen</button>
+        <button type="button" id="btnReleaseUpdateFs" class="btn-primary" disabled>FS flashen</button>
       </div>
       <div id="releaseInfo" style="margin-top:8px; font-size:14px; color:#0f172a; white-space:pre-wrap;">Noch nicht geladen.</div>
     </div>
@@ -127,6 +130,7 @@
     const releaseInfo = document.getElementById('releaseInfo');
     const btnCheckRelease = document.getElementById('btnCheckRelease');
     const btnReleaseUpdate = document.getElementById('btnReleaseUpdate');
+    const btnReleaseUpdateFs = document.getElementById('btnReleaseUpdateFs');
 
     function dayLabel(idx){
       return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
@@ -213,26 +217,29 @@
     async function loadLatestRelease(){
       releaseInfo.textContent = 'Lade...';
       btnReleaseUpdate.disabled = true;
+      btnReleaseUpdateFs.disabled = true;
       try {
         const res = await fetch('https://api.github.com/repos/dani251198/led-sign/releases/latest', {headers:{'Accept':'application/vnd.github+json'}});
         if(!res.ok) throw new Error('HTTP ' + res.status);
         const data = await res.json();
         const notes = escapeHtml(data.body || 'Keine Release Notes');
-        const asset = (data.assets || []).find(a => /firmware\.bin/i.test(a.name));
-        const fwUrl = asset ? asset.browser_download_url : '';
-        releaseInfo.innerHTML = `Version: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${asset.name}` : '\nKeine Firmware-Asset gefunden'}`;
-        if(fwUrl){
-          releaseInfo.dataset.fwUrl = fwUrl;
-          btnReleaseUpdate.disabled = false;
-          btnReleaseUpdate.textContent = `Release flashen (${data.tag_name || asset.name})`;
-        } else {
-          releaseInfo.dataset.fwUrl = '';
-          btnReleaseUpdate.disabled = true;
-        }
+        const assetFw = (data.assets || []).find(a => /firmware\.bin/i.test(a.name));
+        const assetFs = (data.assets || []).find(a => /littlefs\.bin/i.test(a.name));
+        const fwUrl = assetFw ? assetFw.browser_download_url : '';
+        const fsUrl = assetFs ? assetFs.browser_download_url : '';
+        releaseInfo.innerHTML = `Version: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${assetFw.name}` : '\nKeine Firmware-Asset gefunden'}${fsUrl ? `\nFilesystem: ${assetFs.name}` : '\nKein Filesystem-Asset gefunden'}`;
+        releaseInfo.dataset.fwUrl = fwUrl;
+        releaseInfo.dataset.fsUrl = fsUrl;
+        btnReleaseUpdate.disabled = !fwUrl;
+        btnReleaseUpdateFs.disabled = !fsUrl;
+        if(fwUrl) btnReleaseUpdate.textContent = `Firmware flashen (${data.tag_name || assetFw.name})`;
+        if(fsUrl) btnReleaseUpdateFs.textContent = `FS flashen (${data.tag_name || assetFs.name})`;
       } catch(err){
         releaseInfo.textContent = 'Fehler: ' + err.message;
         releaseInfo.dataset.fwUrl = '';
+        releaseInfo.dataset.fsUrl = '';
         btnReleaseUpdate.disabled = true;
+        btnReleaseUpdateFs.disabled = true;
       }
     }
 
@@ -344,6 +351,14 @@
       else{ alert('Update fehlgeschlagen'); }
     });
 
+    document.getElementById('btnUpdateFs').addEventListener('click', async ()=>{
+      const url = document.getElementById('fsUrl').value;
+      if(!url) return alert('URL fehlt');
+      const res = await fetch('/api/updatefs',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url})});
+      if(res.ok){ alert('Filesystem-Update gestartet, Gerät rebootet.'); }
+      else{ alert('Update fehlgeschlagen'); }
+    });
+
     btnReleaseUpdate.addEventListener('click', async ()=>{
       const fwUrl = releaseInfo.dataset.fwUrl;
       if(!fwUrl){
@@ -352,6 +367,17 @@
       }
       const res = await fetch('/api/update',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: fwUrl})});
       if(res.ok){ alert('Update gestartet, Gerät rebootet.'); }
+      else{ alert('Update fehlgeschlagen'); }
+    });
+
+    btnReleaseUpdateFs.addEventListener('click', async ()=>{
+      const fsUrl = releaseInfo.dataset.fsUrl;
+      if(!fsUrl){
+        alert('Keine Filesystem-URL gefunden. Bitte Release laden.');
+        return;
+      }
+      const res = await fetch('/api/updatefs',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({url: fsUrl})});
+      if(res.ok){ alert('Filesystem-Update gestartet, Gerät rebootet.'); }
       else{ alert('Update fehlgeschlagen'); }
     });
 

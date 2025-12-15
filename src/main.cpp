@@ -247,7 +247,7 @@ void sendJsonError(const String &msg) {
 }
 
 // --------- OTA update from URL ---------
-bool performUpdate(const String &url) {
+bool performUpdate(const String &url, bool isFs = false) {
   HTTPClient http;
   http.begin(url);
   int httpCode = http.GET();
@@ -259,7 +259,7 @@ bool performUpdate(const String &url) {
 
   int len = http.getSize();
   WiFiClient *stream = http.getStreamPtr();
-  if (!Update.begin(len)) {
+  if (!Update.begin(len, isFs ? U_SPIFFS : U_FLASH)) {
     Serial.println("Not enough space for update");
     http.end();
     return false;
@@ -503,7 +503,21 @@ void handleUpdate() {
   if (err) return sendJsonError("JSON parse error");
   String url = doc["url"].as<String>();
   if (url.length() == 0) return sendJsonError("url missing");
-  bool ok = performUpdate(url);
+  bool ok = performUpdate(url, false);
+  if (!ok) return sendJsonError("update failed");
+  server.send(200, "application/json", "{\"status\":\"rebooting\"}");
+  delay(500);
+  ESP.restart();
+}
+
+void handleUpdateFs() {
+  if (server.method() != HTTP_POST) return sendJsonError("POST required");
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, server.arg("plain"));
+  if (err) return sendJsonError("JSON parse error");
+  String url = doc["url"].as<String>();
+  if (url.length() == 0) return sendJsonError("url missing");
+  bool ok = performUpdate(url, true);
   if (!ok) return sendJsonError("update failed");
   server.send(200, "application/json", "{\"status\":\"rebooting\"}");
   delay(500);
@@ -554,6 +568,7 @@ void setupServer() {
   server.on("/api/config", HTTP_POST, handleConfigPost);
   server.on("/api/status", HTTP_GET, handleStatus);
   server.on("/api/update", HTTP_POST, handleUpdate);
+  server.on("/api/updatefs", HTTP_POST, handleUpdateFs);
   server.on("/api/appointments", HTTP_GET, handleAppointmentsGet);
   server.on("/api/appointments", HTTP_POST, handleAppointmentsPost);
   server.on("/api/appointments", HTTP_DELETE, handleAppointmentsDelete);
