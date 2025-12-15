@@ -145,7 +145,7 @@ bool isOpenNow(time_t nowLocal) {
 }
 
 void saveConfig() {
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(2048);
   doc["ledCount"] = configState.ledCount;
   doc["brightness"] = configState.brightness;
   doc["mode"] = configState.mode;
@@ -153,7 +153,7 @@ void saveConfig() {
   doc["icalUrl"] = configState.icalUrl;
   doc["appointmentTime"] = configState.appointmentTime;
   doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
-  JsonArray appointments = doc.createNestedArray("appointments");
+  JsonArray appointments = doc["appointments"].to<JsonArray>();
   for (int i = 0; i < configState.appointmentCount; ++i) {
     appointments.add(configState.appointments[i]);
   }
@@ -165,9 +165,9 @@ void saveConfig() {
   doc["effectColor"] = configState.effectColor;
   doc["effectSpeed"] = configState.effectSpeed;
 
-  JsonArray hours = doc.createNestedArray("hours");
+  JsonArray hours = doc["hours"].to<JsonArray>();
   for (int i = 0; i < 7; ++i) {
-    JsonObject h = hours.createNestedObject();
+    JsonObject h = hours.add<JsonObject>();
     h["start"] = configState.hours[i].start;
     h["end"] = configState.hours[i].end;
   }
@@ -198,7 +198,7 @@ void loadConfig() {
     Serial.println("Failed to open config, using defaults");
     return;
   }
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(2048);
   DeserializationError err = deserializeJson(doc, f);
   f.close();
   if (err) {
@@ -239,7 +239,7 @@ void loadConfig() {
 }
 
 void sendJsonError(const String &msg) {
-  StaticJsonDocument<128> doc;
+  DynamicJsonDocument doc(128);
   doc["error"] = msg;
   String out;
   serializeJson(doc, out);
@@ -415,7 +415,7 @@ void handleLeds(time_t nowLocal) {
 
 // --------- Web API ---------
 void handleConfigGet() {
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(2048);
   doc["ledCount"] = configState.ledCount;
   doc["brightness"] = configState.brightness;
   doc["mode"] = configState.mode;
@@ -429,9 +429,9 @@ void handleConfigGet() {
   doc["effect"] = configState.effect;
   doc["effectColor"] = configState.effectColor;
   doc["effectSpeed"] = configState.effectSpeed;
-  JsonArray hours = doc.createNestedArray("hours");
+  JsonArray hours = doc["hours"].to<JsonArray>();
   for (int i = 0; i < 7; ++i) {
-    JsonObject h = hours.createNestedObject();
+    JsonObject h = hours.add<JsonObject>();
     h["start"] = configState.hours[i].start;
     h["end"] = configState.hours[i].end;
   }
@@ -442,7 +442,7 @@ void handleConfigGet() {
 
 void handleConfigPost() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  StaticJsonDocument<2048> doc;
+  DynamicJsonDocument doc(2048);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
 
@@ -482,7 +482,7 @@ void handleConfigPost() {
 }
 
 void handleStatus() {
-  StaticJsonDocument<256> doc;
+  DynamicJsonDocument doc(256);
   time_t nowLocal = time(nullptr);
   time_t next = nextAnyAppointment(nowLocal);
   doc["wifi"] = WiFi.isConnected();
@@ -499,7 +499,7 @@ void handleStatus() {
 
 void handleUpdate() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  StaticJsonDocument<256> doc;
+  DynamicJsonDocument doc(256);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
   String url = doc["url"].as<String>();
@@ -513,7 +513,7 @@ void handleUpdate() {
 
 void handleUpdateFs() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  StaticJsonDocument<256> doc;
+  DynamicJsonDocument doc(256);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
   String url = doc["url"].as<String>();
@@ -527,7 +527,7 @@ void handleUpdateFs() {
 
 void handleUpdateBundle() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  StaticJsonDocument<384> doc;
+  DynamicJsonDocument doc(384);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
   String fwUrl = doc["fwUrl"].as<String>();
@@ -546,7 +546,7 @@ void handleUpdateBundle() {
 }
 
 void handleAppointmentsGet() {
-  StaticJsonDocument<768> doc;
+  DynamicJsonDocument doc(768);
   JsonArray arr = doc.to<JsonArray>();
   for (int i = 0; i < configState.appointmentCount; ++i) arr.add(configState.appointments[i]);
   String out;
@@ -556,7 +556,7 @@ void handleAppointmentsGet() {
 
 void handleAppointmentsPost() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  StaticJsonDocument<256> doc;
+  DynamicJsonDocument doc(256);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
   String t = doc["time"].as<String>();
@@ -567,7 +567,7 @@ void handleAppointmentsPost() {
 
 void handleAppointmentsDelete() {
   if (server.method() != HTTP_DELETE) return sendJsonError("DELETE required");
-  StaticJsonDocument<128> doc;
+  DynamicJsonDocument doc(128);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
   int idx = doc["index"] | -1;
@@ -639,7 +639,7 @@ void setupServer() {
         return;
       }
     }
-    File f = LittleFS.open("/index.html", "r");
+    f = LittleFS.open("/index.html", "r");
     if (f) {
       server.streamFile(f, "text/html");
       f.close();
@@ -656,7 +656,13 @@ void setupWifiAndTime() {
   WiFiManager wm;
   std::vector<const char*> menu = {"wifi", "info", "custom", "exit"};
   wm.setMenu(menu);
-  wm.setCustomMenuHTML("<li class=\"menu-item\"><a href=\"/app\">LED Panel öffnen</a></li>");
+  wm.setCustomMenuHTML(
+    "<li class=\"menu-item\">"
+    "<a href=\"/app\" style=\"display:block;padding:10px 12px;margin:6px 0;"
+    "background:#2563eb;color:#fff;border-radius:6px;text-decoration:none;font-weight:600;\">"
+    "LED Panel öffnen\"</a>"
+    "</li>"
+  );
   wm.setWebServerCallback([&]() {
     if (!wm.server) return;
     wm.server->on("/app", [&wm]() {

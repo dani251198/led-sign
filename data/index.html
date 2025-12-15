@@ -29,7 +29,7 @@
 <body>
   <h1>Agentur-AoA LED</h1>
   <p class="sub">Webpanel zum Steuern von Farben, Helligkeit, Zeiten, Terminen und Updates.</p>
-  <p>Status: <span id="status">laden...</span></p>
+  <p>Status: <span id="status">laden...</span> · Uhrzeit: <span id="clockNow">--:--</span></p>
 
   <form id="cfgForm">
     <fieldset>
@@ -125,6 +125,7 @@
     const releaseInfo = document.getElementById('releaseInfo');
     const btnReleaseInfo = document.getElementById('btnReleaseInfo');
     const btnReleaseFlash = document.getElementById('btnReleaseFlash');
+    const clockNowEl = document.getElementById('clockNow');
 
     function dayLabel(idx){
       return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
@@ -206,6 +207,11 @@
 
     function escapeHtml(str){
       return str.replace(/[&<>"]/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[s]));
+    }
+
+    function updateClockNow(){
+      const d = new Date();
+      clockNowEl.textContent = d.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
     }
 
     async function loadLatestRelease(){
@@ -357,7 +363,9 @@
     loadConfig();
     loadAppointments();
     loadStatus();
+    updateClockNow();
     setInterval(loadStatus, 5000);
+    setInterval(updateClockNow, 1000);
   </script>
 
   <p style="margin-top:24px; color:#475569; font-size:13px; text-align:center;">
