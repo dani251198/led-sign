@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Felix AoA Control</title>
+  <title>Agentur-für-Felix</title>
   <style>
     :root { color-scheme: light; }
     body { font-family: system-ui, sans-serif; margin: 16px; background: #f4f6fb; color: #0f172a; }
@@ -20,10 +20,23 @@
     .btn-primary { background: #2563eb; border-color: #1d4ed8; color: #fff; }
     .btn-primary:hover { background: #1d4ed8; }
     .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; }
+    .grid-panels { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 12px; }
     .inline { display: inline-flex; align-items: center; gap: 8px; }
+    .inline-ical { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; }
+    .inline-ical .ical-color { width:52px; height:36px; padding:0; border:none; background:transparent; flex:0 0 auto; }
+    .ical-row { display:flex; gap:8px; align-items:center; }
+    .ical-row input[type="text"] { flex:1; min-width:0; }
+    .mode-options { display:flex; gap:8px; flex-wrap:wrap; }
+    .mode-pill { display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border:1px solid #cfd2dc; border-radius:20px; background:#fff; cursor:pointer; }
+    .mode-pill input { margin:0; }
+    .mode-pill.active { border-color:#2563eb; background:#e3edff; }
     ul { padding-left: 18px; }
     .actions { display: flex; justify-content: flex-end; margin-top: 12px; }
     .hidden { display: none; }
+    .topbar { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; }
+    .clockblock { text-align:right; }
+    #clockNow { font-size: 22px; font-weight: 700; }
+    #dateNow { font-size: 16px; color:#475569; }
     .led-preview { position: relative; width: 210px; height: 150px; margin: 12px 0 18px; background: #e7ecf5; border: 1px solid #d5d7e0; border-radius: 10px; }
     .led-dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #d1d5db; box-shadow: 0 0 6px rgba(0,0,0,0.15); transition: background-color 0.2s ease, filter 1s linear; }
     .led-preview.animate-rainbow .led-dot { animation: hue-cycle 2.4s linear infinite; }
@@ -31,74 +44,98 @@
   </style>
 </head>
 <body>
-  <h1>Agentur-AoA LED</h1>
+  <h1>Agentur-für-Felix</h1>
   <p class="sub">Webpanel zum Steuern von Farben, Helligkeit, Zeiten, Terminen und Updates.</p>
-  <p>Status: <span id="status">laden...</span> · Uhrzeit: <span id="clockNow">--:--</span> · Version: <span id="fwVersion">--</span></p>
+  <div class="topbar">
+    <p class="sub" style="margin:0;">Status: <span id="status">laden...</span> · Version: <span id="fwVersion">--</span></p>
+    <div class="clockblock">
+      <div id="clockNow">--:--</div>
+      <div id="dateNow">--.--.----</div>
+    </div>
+  </div>
 
   <div>
     <strong>LED-Vorschau</strong>
     <div id="ledPreview" class="led-preview"></div>
-    <small style="color:#475569;">12 LEDs angeordnet wie das "A" (Agentur für Arbeit)</small>
   </div>
 
   <form id="cfgForm">
-    <fieldset>
-      <legend>LED &amp; Modus</legend>
-      <p style="margin:0 0 8px; color:#475569; font-size:14px;">LED-Anzahl: 12 (fest)</p>
-      <label>Helligkeit <span id="brightnessLabel">60%</span>
-        <input type="range" name="brightness" min="0" max="100" value="60">
-      </label>
-      <label>Mode
-        <select name="mode">
-          <option value="clock">Clock</option>
-          <option value="status">Status (Open/Closed)</option>
-          <option value="appointment">Termin</option>
-          <option value="effect">Effekt</option>
-        </select>
-      </label>
-      <label class="mode-effect">Effekt
-        <select name="effect">
-          <option value="rainbow">Rainbow</option>
-          <option value="solid">Solid</option>
-          <option value="breathe">Breathe</option>
-          <option value="theater">Theater Chase</option>
-          <option value="twinkle">Twinkle</option>
-        </select>
-      </label>
-      <label class="mode-effect effect-speed">Effekt-Geschwindigkeit <span id="effectSpeedLabel">4</span>
-        <input type="range" name="effectSpeed" min="1" max="20" value="4">
-      </label>
-      <label class="mode-effect effect-color"><input type="color" name="effectColor"> Effektfarbe</label>
-    </fieldset>
+    <div class="grid-panels">
+      <fieldset>
+        <legend>Modus &amp; Helligkeit</legend>
+        <label>Helligkeit <span id="brightnessLabel">60%</span>
+          <input type="range" name="brightness" min="0" max="100" value="60">
+        </label>
+        <div class="mode-options" role="radiogroup" aria-label="Modus">
+          <label class="mode-pill"><input type="radio" name="mode" value="clock"> Uhr</label>
+          <label class="mode-pill"><input type="radio" name="mode" value="effect"> Effekt</label>
+        </div>
+        <label class="mode-effect">Effekt
+          <select name="effect">
+            <option value="rainbow">Rainbow</option>
+            <option value="solid">Solid</option>
+            <option value="breathe">Breathe</option>
+            <option value="theater">Theater Chase</option>
+            <option value="twinkle">Twinkle</option>
+            <option value="xmas">Xmas Lights</option>
+          </select>
+        </label>
+        <label class="mode-effect effect-speed">Effekt-Geschwindigkeit <span id="effectSpeedLabel">4</span>
+          <input type="range" name="effectSpeed" min="1" max="20" value="4">
+        </label>
+      </fieldset>
 
-    <fieldset id="hoursFieldset">
-      <legend>Zeiten</legend>
-      <label>Zeitzone (POSIX) <input type="text" name="tz"></label>
-      <div class="row" id="hours"></div>
-      <small>Format HH:MM-HH:MM, Start Montag</small>
-    </fieldset>
+      <fieldset>
+        <legend>Farben</legend>
+        <label><input type="color" name="openColor"> Offen</label>
+        <label><input type="color" name="closedColor"> Geschlossen</label>
+        <label><input type="color" name="appointmentColor"> Termin</label>
+        <label><input type="color" name="clockColor"> Uhr</label>
+        <label><input type="color" name="effectColor"> Effektfarbe</label>
+      </fieldset>
+    </div>
 
-    <fieldset>
-      <legend>Farben</legend>
-      <label class="mode-status"><input type="color" name="openColor"> Offen</label>
-      <label class="mode-status"><input type="color" name="closedColor"> Geschlossen</label>
-      <label><input type="color" name="appointmentColor"> Termin</label>
-      <label class="mode-clock"><input type="color" name="clockColor"> Uhr</label>
-    </fieldset>
+    <div class="grid-panels">
+      <fieldset>
+        <legend>Logik &amp; Priorität</legend>
+        <p style="margin:0 0 8px; color:#475569; font-size:13px;">Termin hat höchste Priorität (überschreibt Effekt/Uhr). Öffnungszeiten können Uhr-Farbe übersteuern. Effekt ist exklusiv und deaktiviert Öffnungszeiten.</p>
+        <label><input type="checkbox" name="enableAppointments" checked> Termine aktiv (überschreiben Effekt/Uhr)</label>
+        <label><input type="checkbox" name="enableOpenHours" checked> Öffnungszeiten aktiv (ersetzt Uhr-Farbe bei offen/zu)</label>
+      </fieldset>
+
+      <fieldset id="hoursFieldset">
+        <legend>Zeiten</legend>
+        <label>Zeitzone (POSIX) <input type="text" name="tz"></label>
+        <div class="row" id="hours"></div>
+        <small>Format HH:MM-HH:MM, Start Montag</small>
+      </fieldset>
+    </div>
 
     <fieldset>
       <legend>Termine</legend>
-      <label>iCal URL <input type="text" name="icalUrl" placeholder="https://..."></label>
+        <label>iCal Kalender</label>
+        <div style="padding:8px; margin:4px 0 8px; border:1px solid #fca5a5; background:#fef2f2; color:#991b1b; border-radius:6px; font-size:13px;">
+          Hinweis: iCal-Termine funktionieren aktuell nicht.
+        </div>
+      <div id="icalList" class="vstack" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
+      <div class="inline-ical">
+        <input type="text" id="newIcalUrl" placeholder="https://..." style="flex:1; min-width:0;">
+        <input type="color" id="newIcalColor" value="#00ffff" title="Farbe" class="ical-color">
+        <button type="button" id="btnAddIcal">Hinzufügen</button>
+      </div>
+      <small style="color:#475569;">Bis zu 5 Kalender. Jeder Termin verwendet seine Kalenderfarbe. Nächste Termine je Kalender siehe unten.</small>
       <label>Vorwarnzeit (Minuten vor Termin)
         <input type="number" name="notifyMinutesBefore" min="0" max="1440" value="30">
       </label>
       <label>Neuer Termin (deutsches Format: TT.MM.JJJJ HH:MM)
         <div style="display:flex; gap:8px; align-items:center;">
           <input type="text" id="newAppointment" style="flex:1;" placeholder="24.12.2025 10:30">
+          <input type="color" id="newAppointmentColor" value="#00ffff" title="Farbe" style="width:64px; height:36px; padding:0; border:none; background:transparent;">
           <button type="button" id="btnAddAppt">Hinzufügen</button>
         </div>
       </label>
       <div id="apptList"></div>
+        <div id="icalNext" style="margin-top:10px; color:#0f172a; font-size:14px;"></div>
     </fieldset>
 
     <div class="actions">
@@ -131,19 +168,25 @@
     const statusEl = document.getElementById('status');
     const apptListEl = document.getElementById('apptList');
     const brightnessLabel = document.getElementById('brightnessLabel');
-    const modeSelect = document.querySelector('select[name="mode"]');
+    const modeRadios = Array.from(document.querySelectorAll('input[name="mode"]'));
     const effectSelect = document.querySelector('select[name="effect"]');
     const effectSpeedLabel = document.getElementById('effectSpeedLabel');
     const releaseInfo = document.getElementById('releaseInfo');
     const btnReleaseInfo = document.getElementById('btnReleaseInfo');
     const btnReleaseFlash = document.getElementById('btnReleaseFlash');
     const clockNowEl = document.getElementById('clockNow');
+    const dateNowEl = document.getElementById('dateNow');
     const fwVersionEl = document.getElementById('fwVersion');
     const updateStatusEl = document.getElementById('updateStatus');
+    const icalListEl = document.getElementById('icalList');
+    const newIcalUrl = document.getElementById('newIcalUrl');
+    const newIcalColor = document.getElementById('newIcalColor');
+    const icalNextEl = document.getElementById('icalNext');
     let autoSaveTimer;
     let isLoadingConfig = false;
     let latestConfig;
     let latestStatus;
+    let icalEntries = [];
     const ledPreview = document.getElementById('ledPreview');
     const LED_COUNT = 12;
     let previewHue = 0;
@@ -156,28 +199,44 @@
       return ['So','Mo','Di','Mi','Do','Fr','Sa'][idx];
     }
 
+    function getSelectedMode(){
+      const checked = modeRadios.find(r=>r.checked);
+      return checked ? checked.value : 'clock';
+    }
+
+    function syncModePills(){
+      modeRadios.forEach(radio=>{
+        const label = radio.closest('.mode-pill');
+        if(label){
+          label.classList.toggle('active', radio.checked);
+        }
+      });
+    }
+
     function updateModeVisibility(){
-      const mode = modeSelect.value;
+      const mode = getSelectedMode();
       const effect = effectSelect.value;
       document.querySelectorAll('.mode-effect').forEach(el=>{
         el.classList.toggle('hidden', mode !== 'effect');
       });
       document.querySelectorAll('.mode-status').forEach(el=>{
-        el.classList.toggle('hidden', mode !== 'status');
+        el.classList.toggle('hidden', false);
       });
       document.querySelectorAll('.mode-clock').forEach(el=>{
-        el.classList.toggle('hidden', mode !== 'clock');
+        el.classList.toggle('hidden', false);
       });
       hoursFieldset.classList.toggle('hidden', mode !== 'status');
-      const needsColor = effect !== 'rainbow';
       const needsSpeed = effect !== 'solid';
-      document.querySelectorAll('.effect-color').forEach(el=>{
-        el.classList.toggle('hidden', !(mode === 'effect' && needsColor));
-      });
       document.querySelectorAll('.effect-speed').forEach(el=>{
         el.classList.toggle('hidden', !(mode === 'effect' && needsSpeed));
       });
+      const openChk = document.querySelector('input[name="enableOpenHours"]');
+      if(openChk){
+        openChk.disabled = mode === 'effect';
+        openChk.parentElement.style.opacity = mode === 'effect' ? 0.5 : 1;
+      }
       // Termin-Bereich bleibt immer sichtbar.
+      syncModePills();
     }
 
     function buildHours(fields){
@@ -213,6 +272,77 @@
         d.dataset.idx = idx;
         ledPreview.appendChild(d);
       });
+    }
+
+    function renderIcalList(){
+      icalListEl.innerHTML = '';
+      if(!icalEntries || icalEntries.length === 0){
+        const empty = document.createElement('div');
+        empty.textContent = 'Keine Kalender hinterlegt.';
+        empty.style.color = '#475569';
+        icalListEl.appendChild(empty);
+        return;
+      }
+      icalEntries.forEach((entry, idx)=>{
+        const row = document.createElement('div');
+        row.className = 'ical-row';
+        const url = document.createElement('input');
+        url.type = 'text';
+        url.value = entry.url || '';
+        url.placeholder = 'https://...';
+        url.addEventListener('input', ()=>{
+          icalEntries[idx].url = url.value.trim();
+          scheduleAutoSave();
+        });
+        const color = document.createElement('input');
+        color.type = 'color';
+        color.className = 'ical-color';
+        color.value = `#${(entry.color || '00ffff')}`;
+        color.addEventListener('input', ()=>{
+          icalEntries[idx].color = color.value.replace('#','');
+          scheduleAutoSave();
+        });
+        const del = document.createElement('button');
+        del.type = 'button';
+        del.textContent = 'Löschen';
+        del.addEventListener('click', ()=>{
+          icalEntries.splice(idx,1);
+          renderIcalList();
+          scheduleAutoSave();
+        });
+        row.appendChild(url);
+        row.appendChild(color);
+        row.appendChild(del);
+        icalListEl.appendChild(row);
+      });
+    }
+
+    function renderIcalNext(){
+      icalNextEl.innerHTML = '';
+      const next = latestStatus?.icalNext;
+      if(!next || !Array.isArray(next) || next.length === 0){
+        icalNextEl.textContent = 'Keine iCal-Daten geladen.';
+        icalNextEl.style.color = '#475569';
+        return;
+      }
+      const list = document.createElement('ul');
+      next.forEach(entry => {
+        const li = document.createElement('li');
+        const color = document.createElement('span');
+        color.style.display = 'inline-block';
+        color.style.width = '12px';
+        color.style.height = '12px';
+        color.style.borderRadius = '3px';
+        color.style.background = `#${entry.color || '00ffff'}`;
+        color.style.marginRight = '6px';
+        li.appendChild(color);
+        const ts = entry.next ? new Date(entry.next * 1000) : null;
+        const dateStr = ts ? ts.toLocaleString('de-DE', {weekday:'short', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit'}) : 'kein Termin gefunden';
+        const urlLabel = (entry.url || '').replace(/^https?:\/\//,'');
+        li.appendChild(document.createTextNode(`${urlLabel || 'Kalender'}: ${dateStr}`));
+        list.appendChild(li);
+      });
+      icalNextEl.appendChild(list);
     }
 
     function hexToCss(hex){
@@ -265,14 +395,30 @@
       }
 
       if(cfg.mode !== 'effect'){
-        let colorHex = cfg.clockColor || 'ffffff';
-        if(cfg.mode === 'status'){
-          const open = st?.open;
-          colorHex = open ? (cfg.openColor || '00ff00') : (cfg.closedColor || 'ff0000');
-        } else if(cfg.mode === 'appointment'){
-          colorHex = cfg.appointmentColor || '00ffff';
+        // Clock preview: progressive fill over 12h
+        const now = new Date();
+        const hours12 = (now.getHours() % 12) + now.getMinutes()/60;
+        const pos = (hours12 / 12) * LED_COUNT;
+        const full = Math.floor(pos);
+        const frac = pos - full;
+        let baseHex = cfg.clockColor || 'ffffff';
+        if(cfg.enableOpenHours && st){
+          const open = st.open;
+          baseHex = open ? (cfg.openColor || '00ff00') : (cfg.closedColor || 'ff0000');
         }
-        applyStatic(colorHex);
+        const baseCss = hexToCss(baseHex);
+        dots.forEach((d, idx)=>{
+          if(idx < full){
+            d.style.backgroundColor = baseCss;
+          } else if(idx === full){
+            const c = hexToRgb(baseHex);
+            const scale = Math.max(0, Math.min(1, frac));
+            const scaled = {r: c.r*scale, g: c.g*scale, b: c.b*scale};
+            d.style.backgroundColor = rgbToCss(scaled);
+          } else {
+            d.style.backgroundColor = '#000000';
+          }
+        });
         return;
       }
 
@@ -340,15 +486,21 @@
         const [start,end] = val.split('-');
         hours.push({start:start||'00:00', end:end||'00:00'});
       }
+      const icals = (icalEntries||[]).filter(e=>e.url && e.url.trim().length>0).slice(0,5).map(e=>({
+        url: e.url.trim(),
+        color: (e.color||'').replace('#','') || (form.appointmentColor.value.replace('#',''))
+      }));
       return {
         ledCount: LED_COUNT,
         brightness: Math.round(Number(form.brightness.value) / 100 * 255),
-        mode: form.mode.value,
+        mode: getSelectedMode(),
         effect: form.effect.value,
         effectSpeed: Number(form.effectSpeed.value),
         effectColor: form.effectColor.value.replace('#',''),
         tz: form.tz.value,
-        icalUrl: form.icalUrl.value,
+        icals,
+        enableAppointments: form.enableAppointments.checked,
+        enableOpenHours: form.enableOpenHours.checked,
         notifyMinutesBefore: Number(form.notifyMinutesBefore.value),
         openColor: form.openColor.value.replace('#',''),
         closedColor: form.closedColor.value.replace('#',''),
@@ -374,7 +526,10 @@
       if(autoSaveTimer) clearTimeout(autoSaveTimer);
       autoSaveTimer = setTimeout(()=>{
         const form = document.getElementById('cfgForm');
-        postConfig(buildConfigPayload(form), {silent:true});
+        const payload = buildConfigPayload(form);
+        latestConfig = payload; // keep preview in sync without reload
+        updateLedPreview();
+        postConfig(payload, {silent:true});
       }, 400);
     }
 
@@ -385,7 +540,9 @@
       const form = document.getElementById('cfgForm');
       form.brightness.value = Math.round((cfg.brightness || 0) / 255 * 100);
       brightnessLabel.textContent = `${form.brightness.value}%`;
-      form.mode.value = cfg.mode;
+      const modeVal = cfg.mode || 'clock';
+      modeRadios.forEach(r=>{ r.checked = (r.value === modeVal); });
+      syncModePills();
       form.effect.value = cfg.effect || 'rainbow';
       form.effectSpeed.value = cfg.effectSpeed ?? 4;
       effectSpeedLabel.textContent = form.effectSpeed.value;
@@ -394,9 +551,17 @@
       form.openColor.value = `#${cfg.openColor || '00ff00'}`;
       form.closedColor.value = `#${cfg.closedColor || 'ff0000'}`;
       form.appointmentColor.value = `#${cfg.appointmentColor || '00ffff'}`;
+      document.getElementById('newAppointmentColor').value = `#${cfg.appointmentColor || '00ffff'}`;
+      form.enableAppointments.checked = cfg.enableAppointments ?? true;
+      form.enableOpenHours.checked = cfg.enableOpenHours ?? true;
       form.clockColor.value = `#${cfg.clockColor || 'ffffff'}`;
-      form.icalUrl.value = cfg.icalUrl || '';
       form.notifyMinutesBefore.value = cfg.notifyMinutesBefore ?? 30;
+      icalEntries = Array.isArray(cfg.icals) ? cfg.icals.slice(0,5) : [];
+      if(icalEntries.length === 0 && cfg.icalUrl){
+        icalEntries.push({url: cfg.icalUrl, color: cfg.icalColor || cfg.appointmentColor || '00ffff'});
+      }
+      icalEntries = icalEntries.map(e=>({url: e.url || '', color: (e.color||cfg.appointmentColor||'00ffff').replace('#','')}));
+      renderIcalList();
       buildHours(cfg.hours);
       updateModeVisibility();
       latestConfig = cfg;
@@ -404,7 +569,7 @@
       isLoadingConfig = false;
     }
 
-    modeSelect.addEventListener('change', updateModeVisibility);
+    modeRadios.forEach(r=>r.addEventListener('change', ()=>{ updateModeVisibility(); scheduleAutoSave(); }));
     effectSelect.addEventListener('change', updateModeVisibility);
 
     document.querySelector('input[name="brightness"]').addEventListener('input', (e)=>{
@@ -414,6 +579,16 @@
 
     document.querySelector('input[name="effectSpeed"]').addEventListener('input', (e)=>{
       effectSpeedLabel.textContent = e.target.value;
+      scheduleAutoSave();
+    });
+
+    document.getElementById('btnAddIcal').addEventListener('click', ()=>{
+      const url = newIcalUrl.value.trim();
+      if(!url) return alert('Bitte iCal URL eintragen');
+      if(icalEntries.length >= 5) return alert('Maximal 5 Kalender');
+      icalEntries.push({url, color: newIcalColor.value.replace('#','')});
+      newIcalUrl.value = '';
+      renderIcalList();
       scheduleAutoSave();
     });
 
@@ -427,6 +602,7 @@
     function updateClockNow(){
       const d = new Date();
       clockNowEl.textContent = d.toLocaleTimeString('de-DE', {hour:'2-digit', minute:'2-digit'});
+      dateNowEl.textContent = d.toLocaleDateString('de-DE', {weekday:'short', day:'2-digit', month:'2-digit', year:'numeric'});
     }
 
     let updateStatusTimer;
@@ -460,7 +636,7 @@
         const assetFs = (data.assets || []).find(a => /littlefs\.bin/i.test(a.name));
         const fwUrl = assetFw ? assetFw.browser_download_url : '';
         const fsUrl = assetFs ? assetFs.browser_download_url : '';
-        releaseInfo.innerHTML = `Version: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${assetFw.name}` : '\nKeine Firmware-Asset gefunden'}${fsUrl ? `\nFilesystem: ${assetFs.name}` : '\nKein Filesystem-Asset gefunden'}`;
+        releaseInfo.innerHTML = `Aktuell: ${fwVersionEl.textContent || '--'}\nVersion: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${assetFw.name}` : '\nKeine Firmware-Asset gefunden'}${fsUrl ? `\nFilesystem: ${assetFs.name}` : '\nKein Filesystem-Asset gefunden'}`;
         releaseInfo.dataset.fwUrl = fwUrl;
         releaseInfo.dataset.fsUrl = fsUrl;
         btnReleaseFlash.disabled = !fwUrl;
@@ -508,7 +684,16 @@
       const list = document.createElement('ul');
       arr.forEach((t, idx)=>{
         const li = document.createElement('li');
-        li.textContent = toGermanDisplay(t);
+        const color = t.color ? `#${t.color}` : `#${(latestConfig?.appointmentColor)||'00ffff'}`;
+        const swatch = document.createElement('span');
+        swatch.style.display = 'inline-block';
+        swatch.style.width = '12px';
+        swatch.style.height = '12px';
+        swatch.style.marginRight = '6px';
+        swatch.style.borderRadius = '3px';
+        swatch.style.background = color;
+        li.appendChild(swatch);
+        li.appendChild(document.createTextNode(toGermanDisplay(t.time || t)));
         const btn = document.createElement('button');
         btn.textContent = 'Löschen';
         btn.style.marginLeft = '8px';
@@ -527,10 +712,11 @@
       try{
         const res = await fetch('/api/status');
         const st = await res.json();
-        statusEl.textContent = st.wifi ? `Online: ${st.ip} Mode=${st.mode}` : 'Offline';
+        statusEl.textContent = st.wifi ? `Online: ${st.ip}` : 'Offline';
         fwVersionEl.textContent = st.version || '--';
         latestStatus = st;
         updateLedPreview();
+        renderIcalNext();
       } catch(err){
         statusEl.textContent = 'Keine Verbindung';
         fwVersionEl.textContent = '--';
@@ -546,9 +732,10 @@
 
     document.getElementById('btnAddAppt').addEventListener('click', async ()=>{
       const val = document.getElementById('newAppointment').value.trim();
+      const colorVal = document.getElementById('newAppointmentColor').value.replace('#','');
       if(!val) return alert('Bitte Termin angeben');
       const iso = toIsoFromGerman(val);
-      const res = await fetch('/api/appointments',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({time: iso})});
+      const res = await fetch('/api/appointments',{method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({time: iso, color: colorVal})});
       if(res.ok){
         document.getElementById('newAppointment').value = '';
         loadAppointments();

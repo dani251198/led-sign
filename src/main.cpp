@@ -14,7 +14,8 @@
 #define DEFAULT_LED_COUNT 12
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
-static const char *FW_VERSION = "v0.5.1";
+#define MAX_ICALS 5
+static const char *FW_VERSION = "v0.5.2";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -24,14 +25,29 @@ struct DayWindow {
   String end;   // format HH:MM
 };
 
+struct AppointmentEntry {
+  String time;  // YYYY-MM-DD HH:MM
+  String color; // hex RGB (no #)
+};
+
+struct IcalSource {
+  String url;
+  String color; // hex RGB
+};
+
 struct DeviceConfig {
   int ledCount = DEFAULT_LED_COUNT;
   uint8_t brightness = 96;
   String mode = "clock"; // clock | status | appointment | effect
   String tz = "CET-1CEST,M3.5.0,M10.5.0/3";
-  String icalUrl = "";
+  String icalUrl = "";  // legacy single iCal URL
+  String icalColor = "00ffff"; // legacy single iCal color
+  IcalSource icals[MAX_ICALS];
+  uint8_t icalCount = 0;
+  bool enableAppointments = true;
+  bool enableOpenHours = true;
   String appointmentTime = ""; // legacy single appointment
-  String appointments[MAX_APPOINTMENTS];
+  AppointmentEntry appointments[MAX_APPOINTMENTS];
   uint8_t appointmentCount = 0;
   uint16_t notifyMinutesBefore = 30;
   String openColor = "00ff00";
@@ -48,7 +64,7 @@ DeviceConfig configState;
 WebServer server(80);
 unsigned long lastNtpSync = 0;
 unsigned long lastIcalFetch = 0;
-time_t nextAppointmentIcal = 0;
+time_t nextIcalTimes[MAX_ICALS] = {0};
 
 // Forward declarations
 void saveConfig();
@@ -90,37 +106,55 @@ bool parseAppointmentTime(const String &val, time_t &out) {
   return out > 0;
 }
 
-time_t nextManualAppointment(time_t nowLocal) {
-  time_t best = 0;
+struct AppointmentHit {
+  time_t when = 0;
+  String color;
+};
+
+AppointmentHit nextManualAppointment(time_t nowLocal) {
+  AppointmentHit hit;
   for (int i = 0; i < configState.appointmentCount; ++i) {
     time_t cand;
-    if (!parseAppointmentTime(configState.appointments[i], cand)) continue;
+    if (!parseAppointmentTime(configState.appointments[i].time, cand)) continue;
     if (difftime(cand, nowLocal) < 0) continue; // past
-    if (best == 0 || cand < best) best = cand;
+    if (hit.when == 0 || cand < hit.when) {
+      hit.when = cand;
+      hit.color = configState.appointments[i].color;
+    }
   }
   // legacy single appointment
   time_t legacy;
   if (parseAppointmentTime(configState.appointmentTime, legacy)) {
-    if (difftime(legacy, nowLocal) >= 0 && (best == 0 || legacy < best)) best = legacy;
+    if (difftime(legacy, nowLocal) >= 0 && (hit.when == 0 || legacy < hit.when)) {
+      hit.when = legacy;
+      hit.color = configState.appointmentColor;
+    }
   }
-  return best;
+  return hit;
 }
 
-time_t nextAnyAppointment(time_t nowLocal) {
-  time_t manual = nextManualAppointment(nowLocal);
-  time_t merged = 0;
-  if (manual > 0) merged = manual;
-  if (nextAppointmentIcal > 0 && (merged == 0 || nextAppointmentIcal < merged) && difftime(nextAppointmentIcal, nowLocal) >= 0) {
-    merged = nextAppointmentIcal;
+AppointmentHit nextAnyAppointment(time_t nowLocal) {
+  AppointmentHit manual = nextManualAppointment(nowLocal);
+  AppointmentHit merged = manual;
+  for (int i = 0; i < configState.icalCount; ++i) {
+    time_t cand = nextIcalTimes[i];
+    if (cand > 0 && difftime(cand, nowLocal) >= 0) {
+      if (merged.when == 0 || cand < merged.when) {
+        merged.when = cand;
+        merged.color = configState.icals[i].color.length() == 6 ? configState.icals[i].color : configState.icalColor;
+      }
+    }
   }
   return merged;
 }
 
-bool addAppointment(const String &val) {
+bool addAppointment(const String &val, const String &color) {
   if (configState.appointmentCount >= MAX_APPOINTMENTS) return false;
   time_t t;
   if (!parseAppointmentTime(val, t)) return false;
-  configState.appointments[configState.appointmentCount++] = val;
+  configState.appointments[configState.appointmentCount].time = val;
+  configState.appointments[configState.appointmentCount].color = color.length() == 6 ? color : configState.appointmentColor;
+  configState.appointmentCount++;
   saveConfig();
   return true;
 }
@@ -152,11 +186,20 @@ void saveConfig() {
   doc["mode"] = configState.mode;
   doc["tz"] = configState.tz;
   doc["icalUrl"] = configState.icalUrl;
+  doc["icalColor"] = configState.icalColor;
+  JsonArray icalsSave = doc["icals"].to<JsonArray>();
+  for (int i = 0; i < configState.icalCount; ++i) {
+    JsonObject ic = icalsSave.add<JsonObject>();
+    ic["url"] = configState.icals[i].url;
+    ic["color"] = configState.icals[i].color;
+  }
   doc["appointmentTime"] = configState.appointmentTime;
   doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
   JsonArray appointments = doc["appointments"].to<JsonArray>();
   for (int i = 0; i < configState.appointmentCount; ++i) {
-    appointments.add(configState.appointments[i]);
+    JsonObject a = appointments.add<JsonObject>();
+    a["time"] = configState.appointments[i].time;
+    a["color"] = configState.appointments[i].color;
   }
   doc["openColor"] = configState.openColor;
   doc["closedColor"] = configState.closedColor;
@@ -165,6 +208,9 @@ void saveConfig() {
   doc["effect"] = configState.effect;
   doc["effectColor"] = configState.effectColor;
   doc["effectSpeed"] = configState.effectSpeed;
+  doc["icalColor"] = configState.icalColor;
+  doc["enableAppointments"] = configState.enableAppointments;
+  doc["enableOpenHours"] = configState.enableOpenHours;
 
   JsonArray hours = doc["hours"].to<JsonArray>();
   for (int i = 0; i < 7; ++i) {
@@ -212,6 +258,30 @@ void loadConfig() {
   if (const char *v = doc["mode"]) configState.mode = v; else configState.mode = "clock";
   if (const char *v = doc["tz"]) configState.tz = v; else configState.tz = "CET-1CEST,M3.5.0,M10.5.0/3";
   if (const char *v = doc["icalUrl"]) configState.icalUrl = v; else configState.icalUrl = "";
+  if (const char *v = doc["icalColor"]) configState.icalColor = v; else configState.icalColor = configState.appointmentColor;
+  configState.icalCount = 0;
+  JsonArray icalsLoad = doc["icals"].as<JsonArray>();
+  if (!icalsLoad.isNull()) {
+    for (JsonVariant v : icalsLoad) {
+      if (configState.icalCount >= MAX_ICALS) break;
+      const char *url = v["url"].as<const char *>();
+      const char *color = v["color"].as<const char *>();
+      if (url && strlen(url) > 0) {
+        configState.icals[configState.icalCount].url = url;
+        configState.icals[configState.icalCount].color = color ? color : configState.icalColor;
+        configState.icalCount++;
+      }
+    }
+  }
+  if (configState.icalCount == 0 && configState.icalUrl.length() > 0) {
+    configState.icals[0].url = configState.icalUrl;
+    configState.icals[0].color = configState.icalColor;
+    configState.icalCount = 1;
+  }
+  for (int i = 0; i < MAX_ICALS; ++i) nextIcalTimes[i] = 0;
+  lastIcalFetch = 0;
+  configState.enableAppointments = doc["enableAppointments"].is<bool>() ? doc["enableAppointments"].as<bool>() : true;
+  configState.enableOpenHours = doc["enableOpenHours"].is<bool>() ? doc["enableOpenHours"].as<bool>() : true;
   if (const char *v = doc["appointmentTime"]) configState.appointmentTime = v; else configState.appointmentTime = "";
   configState.notifyMinutesBefore = doc["notifyMinutesBefore"] | 30;
   configState.appointmentCount = 0;
@@ -219,8 +289,13 @@ void loadConfig() {
   if (!appointments.isNull()) {
     for (JsonVariant v : appointments) {
       if (configState.appointmentCount >= MAX_APPOINTMENTS) break;
-      const char *t = v.as<const char *>();
-      if (t) configState.appointments[configState.appointmentCount++] = t;
+      const char *t = v["time"].as<const char *>();
+      const char *c = v["color"].as<const char *>();
+      if (t) {
+        configState.appointments[configState.appointmentCount].time = t;
+        configState.appointments[configState.appointmentCount].color = c ? c : configState.appointmentColor;
+        configState.appointmentCount++;
+      }
     }
   }
   if (const char *v = doc["openColor"]) configState.openColor = v; else configState.openColor = "00ff00";
@@ -258,6 +333,13 @@ String buildConfigJson() {
   doc["mode"] = configState.mode;
   doc["tz"] = configState.tz;
   doc["icalUrl"] = configState.icalUrl;
+  doc["icalColor"] = configState.icalColor;
+  JsonArray icalsConfig = doc["icals"].to<JsonArray>();
+  for (int i = 0; i < configState.icalCount; ++i) {
+    JsonObject ic = icalsConfig.add<JsonObject>();
+    ic["url"] = configState.icals[i].url;
+    ic["color"] = configState.icals[i].color;
+  }
   doc["appointmentTime"] = configState.appointmentTime;
   doc["openColor"] = configState.openColor;
   doc["closedColor"] = configState.closedColor;
@@ -280,14 +362,23 @@ String buildConfigJson() {
 String buildStatusJson() {
   DynamicJsonDocument doc(256);
   time_t nowLocal = time(nullptr);
-  time_t next = nextAnyAppointment(nowLocal);
+  AppointmentHit next = nextAnyAppointment(nowLocal);
   doc["wifi"] = WiFi.isConnected();
   doc["ip"] = WiFi.localIP().toString();
   doc["mode"] = configState.mode;
+  doc["enableAppointments"] = configState.enableAppointments;
+  doc["enableOpenHours"] = configState.enableOpenHours;
   doc["open"] = isOpenNow(nowLocal);
-  doc["nextAppointment"] = (uint32_t)next;
+  doc["nextAppointment"] = (uint32_t)next.when;
+  JsonArray icalNextArr = doc["icalNext"].to<JsonArray>();
+  for (int i = 0; i < configState.icalCount; ++i) {
+    JsonObject o = icalNextArr.add<JsonObject>();
+    o["url"] = configState.icals[i].url;
+    o["color"] = configState.icals[i].color;
+    o["next"] = (uint32_t)nextIcalTimes[i];
+  }
   doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
-  doc["notifyActive"] = (next > 0) && (difftime(next, nowLocal) <= configState.notifyMinutesBefore * 60);
+  doc["notifyActive"] = (next.when > 0) && (difftime(next.when, nowLocal) <= configState.notifyMinutesBefore * 60);
   doc["version"] = FW_VERSION;
   String out;
   serializeJson(doc, out);
@@ -306,7 +397,10 @@ bool applyConfigJson(const String &body, String &errOut) {
   configState.brightness = doc["brightness"].as<int>();
   if (const char *v = doc["mode"]) configState.mode = v;
   if (const char *v = doc["tz"]) configState.tz = v;
-  if (const char *v = doc["icalUrl"]) configState.icalUrl = v;
+  if (const char *v = doc["icalUrl"]) configState.icalUrl = v; else configState.icalUrl = "";
+  if (const char *v = doc["icalColor"]) configState.icalColor = v; else configState.icalColor = configState.appointmentColor;
+  configState.enableAppointments = doc["enableAppointments"].is<bool>() ? doc["enableAppointments"].as<bool>() : true;
+  configState.enableOpenHours = doc["enableOpenHours"].is<bool>() ? doc["enableOpenHours"].as<bool>() : true;
   if (const char *v = doc["appointmentTime"]) configState.appointmentTime = v;
   if (doc["notifyMinutesBefore"].is<int>()) configState.notifyMinutesBefore = doc["notifyMinutesBefore"].as<int>();
   if (const char *v = doc["openColor"]) configState.openColor = v;
@@ -322,8 +416,13 @@ bool applyConfigJson(const String &body, String &errOut) {
     configState.appointmentCount = 0;
     for (JsonVariant v : appts) {
       if (configState.appointmentCount >= MAX_APPOINTMENTS) break;
-      const char *t = v.as<const char *>();
-      if (t) configState.appointments[configState.appointmentCount++] = t;
+      const char *t = v["time"].as<const char *>();
+      const char *c = v["color"].as<const char *>();
+      if (t) {
+        configState.appointments[configState.appointmentCount].time = t;
+        configState.appointments[configState.appointmentCount].color = c ? c : configState.appointmentColor;
+        configState.appointmentCount++;
+      }
     }
   }
 
@@ -332,6 +431,30 @@ bool applyConfigJson(const String &body, String &errOut) {
     if (const char *s = hours[i]["start"]) configState.hours[i].start = s;
     if (const char *e = hours[i]["end"]) configState.hours[i].end = e;
   }
+
+  // iCal list
+  configState.icalCount = 0;
+  JsonArray icalsApply = doc["icals"].as<JsonArray>();
+  if (!icalsApply.isNull()) {
+    for (JsonVariant v : icalsApply) {
+      if (configState.icalCount >= MAX_ICALS) break;
+      const char *url = v["url"].as<const char *>();
+      const char *color = v["color"].as<const char *>();
+      if (url && strlen(url) > 0) {
+        configState.icals[configState.icalCount].url = url;
+        configState.icals[configState.icalCount].color = color ? color : configState.icalColor;
+        configState.icalCount++;
+      }
+    }
+  }
+  if (configState.icalCount == 0 && configState.icalUrl.length() > 0) {
+    configState.icals[0].url = configState.icalUrl;
+    configState.icals[0].color = configState.icalColor;
+    configState.icalCount = 1;
+  }
+
+  for (int i = 0; i < MAX_ICALS; ++i) nextIcalTimes[i] = 0;
+  lastIcalFetch = 0;
 
   return true;
 }
@@ -373,58 +496,148 @@ bool performUpdate(const String &url, bool isFs = false) {
   return Update.isFinished();
 }
 
+// Perform FS update but restore config afterwards so user settings survive.
+bool updateFsPreserveConfig(const String &url) {
+  String backup;
+  if (LittleFS.exists(FILE_CONFIG)) {
+    File f = LittleFS.open(FILE_CONFIG, "r");
+    if (f) {
+      backup = f.readString();
+      f.close();
+    }
+  }
+
+  if (!performUpdate(url, true)) return false;
+
+  LittleFS.end();
+  if (!LittleFS.begin()) {
+    Serial.println("LittleFS remount failed after update");
+    return false;
+  }
+
+  if (backup.length() > 0) {
+    File f = LittleFS.open(FILE_CONFIG, "w");
+    if (!f) {
+      Serial.println("Failed to restore config after FS update");
+      return false;
+    }
+    f.print(backup);
+    f.close();
+  }
+  return true;
+}
+
 // --------- ICAL fetch placeholder ---------
 void fetchIcalIfNeeded() {
-  if (configState.icalUrl.length() == 0) return;
+  if (configState.icalCount == 0) return;
   if (millis() - lastIcalFetch < 30UL * 60UL * 1000UL) return; // every 30 min
   lastIcalFetch = millis();
 
-  HTTPClient http;
-  http.begin(configState.icalUrl);
-  int code = http.GET();
-  if (code != HTTP_CODE_OK) {
-    Serial.printf("iCal fetch failed: %d\n", code);
+  auto parseDtstart = [](String line) -> time_t {
+    int colon = line.indexOf(":");
+    if (colon < 0) return 0;
+    String ts = line.substring(colon + 1);
+    ts.trim();
+    ts.replace("Z", ""); // ignore UTC marker, treat as local for simplicity
+    ts.replace("T", "");
+    if (ts.length() < 8) return 0;
+    while (ts.length() < 14) ts += "0"; // pad missing hhmmss if only date present
+
+    struct tm t = {};
+    t.tm_year = ts.substring(0, 4).toInt() - 1900;
+    t.tm_mon  = ts.substring(4, 6).toInt() - 1;
+    t.tm_mday = ts.substring(6, 8).toInt();
+    t.tm_hour = ts.substring(8, 10).toInt();
+    t.tm_min  = ts.substring(10, 12).toInt();
+    t.tm_sec  = ts.substring(12, 14).toInt();
+    time_t parsed = mktime(&t);
+    return parsed > 0 ? parsed : 0;
+  };
+
+  for (int idx = 0; idx < configState.icalCount; ++idx) {
+    const String &url = configState.icals[idx].url;
+    if (url.length() == 0) {
+      nextIcalTimes[idx] = 0;
+      continue;
+    }
+
+    HTTPClient http;
+    http.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
+    http.begin(url);
+    int code = http.GET();
+    if (code != HTTP_CODE_OK) {
+      Serial.printf("iCal fetch failed (%d) for %s\n", code, url.c_str());
+      http.end();
+      nextIcalTimes[idx] = 0;
+      continue;
+    }
+
+    String payload = http.getString();
     http.end();
-    return;
+    time_t nowLocal = time(nullptr);
+    time_t bestFuture = 0;
+    time_t bestAny = 0;
+    int pos = 0;
+    while (true) {
+      pos = payload.indexOf("DTSTART", pos);
+      if (pos < 0) break;
+      int nl = payload.indexOf('\n', pos);
+      String line = payload.substring(pos, nl < 0 ? payload.length() : nl);
+      if (line.endsWith("\r")) line.remove(line.length() - 1);
+      // consume folded continuation lines starting with space/tab
+      int contPos = nl;
+      while (contPos > 0 && contPos < (int)payload.length()) {
+        int nextNl = payload.indexOf('\n', contPos + 1);
+        String cont = payload.substring(contPos + 1, nextNl < 0 ? payload.length() : nextNl);
+        if (!(cont.startsWith(" ") || cont.startsWith("\t"))) break;
+        cont.trim();
+        line += cont;
+        contPos = nextNl;
+        nl = nextNl;
+      }
+
+      time_t cand = parseDtstart(line);
+      if (cand > 0 && difftime(cand, nowLocal) >= 0) {
+        if (bestFuture == 0 || cand < bestFuture) bestFuture = cand;
+      }
+      if (cand > 0) {
+        if (bestAny == 0 || cand < bestAny) bestAny = cand;
+      }
+
+      if (nl < 0) break;
+      pos = nl + 1;
+    }
+    nextIcalTimes[idx] = bestFuture > 0 ? bestFuture : bestAny;
   }
-
-  String payload = http.getString();
-  http.end();
-
-  // Minimal parse: find first DTSTART
-  int pos = payload.indexOf("DTSTART");
-  if (pos < 0) return;
-  int colon = payload.indexOf(":", pos);
-  if (colon < 0) return;
-  String ts = payload.substring(colon + 1, colon + 16); // YYYYMMDDTHHMMSS
-  if (ts.length() < 15) return;
-
-  struct tm t = {};
-  t.tm_year = ts.substring(0, 4).toInt() - 1900;
-  t.tm_mon = ts.substring(4, 6).toInt() - 1;
-  t.tm_mday = ts.substring(6, 8).toInt();
-  t.tm_hour = ts.substring(9, 11).toInt();
-  t.tm_min = ts.substring(11, 13).toInt();
-  t.tm_sec = ts.substring(13, 15).toInt();
-  time_t parsed = mktime(&t);
-  if (parsed > 0) nextAppointmentIcal = parsed;
 }
 
 // --------- LED rendering ---------
 void showClock(time_t nowLocal, uint32_t colorHex, bool alert = false) {
   fill_solid(leds, configState.ledCount, CRGB::Black);
-  double hours = (double)(nowLocal % 43200) / 3600.0; // 12h wrap
-  double pos = (hours / 12.0) * (configState.ledCount - 1);
-  int idx = floor(pos);
-  double frac = pos - idx;
-  CRGB c;
-  colorToCrgb(colorHex, c);
+
+  // Map 12h range onto strip as a progressive fill (e.g., 20:30 -> 8 full, 9th half)
+  double hours12 = fmod((double)nowLocal / 3600.0, 12.0); // 0..12
+  double pos = (hours12 / 12.0) * configState.ledCount;   // 0..ledCount
+  int full = floor(pos);
+  double frac = pos - full; // 0..1
+
+  CRGB base;
+  colorToCrgb(colorHex, base);
   if (alert && ((millis() / 400) % 2 == 0)) {
-    c = CRGB::White; // blink for appointment alert
+    base = CRGB::White; // blink for appointment alert
   }
-  leds[idx] = c;
-  if (idx + 1 < configState.ledCount) leds[idx + 1] = c.fadeToBlackBy((1.0 - frac) * 255);
-  if (idx > 0) leds[idx - 1] = c.fadeToBlackBy(frac * 255);
+
+  for (int i = 0; i < configState.ledCount; ++i) {
+    if (i < full) {
+      leds[i] = base;
+    } else if (i == full && frac > 0.0 && i < configState.ledCount) {
+      leds[i] = base;
+      leds[i].nscale8_video((uint8_t)round(frac * 255));
+    } else {
+      leds[i] = CRGB::Black;
+    }
+  }
+
   FastLED.show();
 }
 
@@ -467,6 +680,16 @@ void showEffect() {
         leds[i] = c;
       }
     }
+  } else if (configState.effect == "xmas") {
+    // Colorful blinking string: red, green, gold, blue with gentle decay
+    static const CRGB palette[] = {CRGB::Red, CRGB::Green, CRGB(255,215,0), CRGB::Blue};
+    for (int i = 0; i < configState.ledCount; ++i) {
+      leds[i].fadeToBlackBy(50);
+      if (random8() < 80) {
+        uint8_t idx = random8(4);
+        leds[i] = palette[idx];
+      }
+    }
   } else {
     uint8_t step = constrain(configState.effectSpeed, 1, 20);
     for (int i = 0; i < configState.ledCount; ++i) {
@@ -480,27 +703,35 @@ void showEffect() {
 void handleLeds(time_t nowLocal) {
   FastLED.setBrightness(configState.brightness);
   if (configState.mode == "effect") {
-    showEffect();
+    AppointmentHit next = nextAnyAppointment(nowLocal);
+    double diff = next.when > 0 ? difftime(next.when, nowLocal) : 1e9;
+    bool appointmentActive = configState.enableAppointments && next.when > 0 && diff >= 0 && diff <= (configState.notifyMinutesBefore * 60);
+    if (appointmentActive) {
+      uint32_t color = parseHexColor(next.color.length() == 6 ? next.color : configState.appointmentColor);
+      showClock(nowLocal, color, true);
+    } else {
+      showEffect();
+    }
     return;
   }
 
-  time_t target = nextAnyAppointment(nowLocal);
-  double diff = target > 0 ? difftime(target, nowLocal) : 1e9;
-  bool appointmentActive = target > 0 && diff >= 0 && diff <= (configState.notifyMinutesBefore * 60);
+  AppointmentHit next = nextAnyAppointment(nowLocal);
+  double diff = next.when > 0 ? difftime(next.when, nowLocal) : 1e9;
+  bool appointmentActive = configState.enableAppointments && next.when > 0 && diff >= 0 && diff <= (configState.notifyMinutesBefore * 60);
 
   if (appointmentActive) {
-    showClock(nowLocal, parseHexColor(configState.appointmentColor), true);
+    uint32_t color = parseHexColor(next.color.length() == 6 ? next.color : configState.appointmentColor);
+    showClock(nowLocal, color, true);
     return;
   }
 
-  if (configState.mode == "status") {
-    bool open = isOpenNow(nowLocal);
-    showClock(nowLocal, parseHexColor(open ? configState.openColor : configState.closedColor));
-    return;
+  // Clock base with optional open/closed overlay
+  bool open = isOpenNow(nowLocal);
+  uint32_t baseColor = parseHexColor(configState.clockColor);
+  if (configState.enableOpenHours) {
+    baseColor = parseHexColor(open ? configState.openColor : configState.closedColor);
   }
-
-  // default clock mode
-  showClock(nowLocal, parseHexColor(configState.clockColor));
+  showClock(nowLocal, baseColor);
 }
 
 // --------- Web API ---------
@@ -541,7 +772,7 @@ void handleUpdateFs() {
   if (err) return sendJsonError("JSON parse error");
   String url = doc["url"].as<String>();
   if (url.length() == 0) return sendJsonError("url missing");
-  bool ok = performUpdate(url, true);
+  bool ok = updateFsPreserveConfig(url);
   if (!ok) return sendJsonError("update failed");
   server.send(200, "application/json", "{\"status\":\"rebooting\"}");
   delay(500);
@@ -558,7 +789,7 @@ void handleUpdateBundle() {
   if (fwUrl.length() == 0) return sendJsonError("fwUrl missing");
 
   if (fsUrl.length() > 0) {
-    if (!performUpdate(fsUrl, true)) return sendJsonError("fs update failed");
+    if (!updateFsPreserveConfig(fsUrl)) return sendJsonError("fs update failed");
   }
 
   if (!performUpdate(fwUrl, false)) return sendJsonError("fw update failed");
@@ -569,9 +800,13 @@ void handleUpdateBundle() {
 }
 
 void handleAppointmentsGet() {
-  DynamicJsonDocument doc(768);
+  DynamicJsonDocument doc(1024);
   JsonArray arr = doc.to<JsonArray>();
-  for (int i = 0; i < configState.appointmentCount; ++i) arr.add(configState.appointments[i]);
+  for (int i = 0; i < configState.appointmentCount; ++i) {
+    JsonObject o = arr.add<JsonObject>();
+    o["time"] = configState.appointments[i].time;
+    o["color"] = configState.appointments[i].color;
+  }
   String out;
   serializeJson(doc, out);
   server.send(200, "application/json", out);
@@ -579,12 +814,13 @@ void handleAppointmentsGet() {
 
 void handleAppointmentsPost() {
   if (server.method() != HTTP_POST) return sendJsonError("POST required");
-  DynamicJsonDocument doc(256);
+  DynamicJsonDocument doc(384);
   DeserializationError err = deserializeJson(doc, server.arg("plain"));
   if (err) return sendJsonError("JSON parse error");
   String t = doc["time"].as<String>();
+  String c = doc["color"].as<String>();
   if (t.length() == 0) return sendJsonError("time missing");
-  if (!addAppointment(t)) return sendJsonError("invalid time or full");
+  if (!addAppointment(t, c)) return sendJsonError("invalid time or full");
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -714,21 +950,26 @@ void setupWifiAndTime() {
     });
 
     wm.server->on("/api/appointments", HTTP_GET, [&wm]() {
-      DynamicJsonDocument doc(768);
+      DynamicJsonDocument doc(1024);
       JsonArray arr = doc.to<JsonArray>();
-      for (int i = 0; i < configState.appointmentCount; ++i) arr.add(configState.appointments[i]);
+      for (int i = 0; i < configState.appointmentCount; ++i) {
+        JsonObject o = arr.add<JsonObject>();
+        o["time"] = configState.appointments[i].time;
+        o["color"] = configState.appointments[i].color;
+      }
       String out;
       serializeJson(doc, out);
       wm.server->send(200, "application/json", out);
     });
 
     wm.server->on("/api/appointments", HTTP_POST, [&wm]() {
-      DynamicJsonDocument doc(256);
+      DynamicJsonDocument doc(384);
       DeserializationError err = deserializeJson(doc, wm.server->arg("plain"));
       if (err) return sendJsonErrorTo(*wm.server, "JSON parse error");
       String t = doc["time"].as<String>();
+      String c = doc["color"].as<String>();
       if (t.length() == 0) return sendJsonErrorTo(*wm.server, "time missing");
-      if (!addAppointment(t)) return sendJsonErrorTo(*wm.server, "invalid time or full");
+      if (!addAppointment(t, c)) return sendJsonErrorTo(*wm.server, "invalid time or full");
       wm.server->send(200, "application/json", "{\"status\":\"ok\"}");
     });
 
@@ -742,7 +983,7 @@ void setupWifiAndTime() {
     });
   });
   wm.setConfigPortalTimeout(0); // no auto-timeout; stay in portal until connected
-  if (!wm.autoConnect("Felix-AoA-Setup")) {
+  if (!wm.autoConnect("Agentur-für-Felix")) {
     Serial.println("Config portal active, waiting for credentials");
   }
   Serial.print("Connected: ");
