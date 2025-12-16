@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6.5";
+static const char *FW_VERSION = "v0.6.6";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -1131,11 +1131,13 @@ void loop() {
   if (wmPortal) {
     wmPortal->process();
     if (portalActive && !WiFi.isConnected()) {
-      // In AP/config portal: let WiFiManager handle its own server; skip our rendering/server to avoid conflicts.
+      // In AP/config portal: still render based on stored config/RTC, but avoid main HTTP server.
+      handleLeds(time(nullptr));
       delay(30);
       return;
     }
     if (portalActive && WiFi.isConnected()) {
+      wmPortal->stopConfigPortal();
       portalActive = false;
       Serial.print("Connected: ");
       Serial.println(WiFi.localIP());
