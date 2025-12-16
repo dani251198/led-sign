@@ -838,6 +838,7 @@ void handleConfigPost() {
     lastNtpSync = millis();
     tzInitialized = true;
   }
+  FastLED.setBrightness(configState.brightness);
   handleLeds(time(nullptr));
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
@@ -1048,6 +1049,7 @@ void setupWifiAndTime() {
         lastNtpSync = millis();
         tzInitialized = true;
       }
+      FastLED.setBrightness(configState.brightness);
       handleLeds(time(nullptr));
       wm.server->send(200, "application/json", "{\"status\":\"ok\"}");
     });
@@ -1114,6 +1116,10 @@ void setup() {
 
   loadConfig();
 
+  // Set timezone immediately from stored config so localtime() is meaningful even before WiFi/NTP.
+  configTzTime(configState.tz.c_str(), "pool.ntp.org");
+  tzInitialized = true;
+
   FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, MAX_LEDS);
   FastLED.setBrightness(configState.brightness);
 
@@ -1136,7 +1142,7 @@ void loop() {
 
   server.handleClient();
   time_t nowLocal = time(nullptr);
-  if (tzInitialized && millis() - lastNtpSync > 6UL * 60UL * 60UL * 1000UL) {
+  if (tzInitialized && WiFi.isConnected() && millis() - lastNtpSync > 6UL * 60UL * 60UL * 1000UL) {
     configTzTime(configState.tz.c_str(), "pool.ntp.org");
     lastNtpSync = millis();
   }
