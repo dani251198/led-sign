@@ -680,7 +680,7 @@
         const mins = Math.floor(sec / 60);
         const secs = sec % 60;
         const warn = sec > 90 ? ' (kann mehrere Minuten dauern, geduldig warten)' : '';
-        updateProgressEl.textContent = `Laufzeit: ${mins}:${secs.toString().padStart(2,'0')} – Fortschritt im Seriell-Log ansehen${warn}.`;
+        updateProgressEl.textContent = `Laufzeit: ${mins}:${secs.toString().padStart(2,'0')} – Fortschritt im Seriell-Log oder auf LED Anzeige (erste Hälfte filesystem: blau, zweite Hälfte firmware: orange) ${warn}.`;
         updateProgressEl.classList.remove('hidden');
       }, 1000);
     }
