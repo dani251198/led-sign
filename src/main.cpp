@@ -65,6 +65,9 @@ WebServer server(80);
 unsigned long lastNtpSync = 0;
 unsigned long lastIcalFetch = 0;
 time_t nextIcalTimes[MAX_ICALS] = {0};
+WiFiManager *wmPortal = nullptr;
+bool portalActive = false;
+bool tzInitialized = false;
 
 // Forward declarations
 void saveConfig();
@@ -953,9 +956,11 @@ void setupServer() {
 
 void setupWifiAndTime() {
   WiFi.mode(WIFI_STA);
-  WiFiManager wm;
+  static WiFiManager wm;
+  wmPortal = &wm;
   std::vector<const char*> menu = {"wifi", "info", "custom", "exit"};
   wm.setMenu(menu);
+  wm.setConfigPortalBlocking(false);
   wm.setCustomMenuHTML(
     "<li class=\"menu-item\">"
     "<a href=\"/app\" style=\"display:block;padding:10px 12px;margin:6px 0;"
@@ -1024,13 +1029,18 @@ void setupWifiAndTime() {
     });
   });
   wm.setConfigPortalTimeout(0); // no auto-timeout; stay in portal until connected
-  if (!wm.autoConnect("Agentur-für-Felix")) {
-    Serial.println("Config portal active, waiting for credentials");
+  bool connected = wm.autoConnect("Agentur-für-Felix");
+  if (!connected) {
+    portalActive = true;
+    Serial.println("Config portal active, non-blocking mode");
+  } else {
+    portalActive = false;
+    Serial.print("Connected: ");
+    Serial.println(WiFi.localIP());
+    configTzTime(configState.tz.c_str(), "pool.ntp.org");
+    lastNtpSync = millis();
+    tzInitialized = true;
   }
-  Serial.print("Connected: ");
-  Serial.println(WiFi.localIP());
-  configTzTime(configState.tz.c_str(), "pool.ntp.org");
-  lastNtpSync = millis();
 }
 
 void setup() {
@@ -1051,9 +1061,23 @@ void setup() {
 }
 
 void loop() {
+  if (wmPortal && portalActive) {
+    wmPortal->process();
+    // Show a simple breathing effect to signal AP mode
+    static uint8_t breath = 0;
+    static int8_t dir = 1;
+    breath += dir;
+    if (breath == 0 || breath == 255) dir = -dir;
+    CRGB c = CHSV(160, 50, breath);
+    fill_solid(leds, configState.ledCount, c);
+    FastLED.show();
+    delay(30);
+    return;
+  }
+
   server.handleClient();
   time_t nowLocal = time(nullptr);
-  if (millis() - lastNtpSync > 6UL * 60UL * 60UL * 1000UL) {
+  if (tzInitialized && millis() - lastNtpSync > 6UL * 60UL * 60UL * 1000UL) {
     configTzTime(configState.tz.c_str(), "pool.ntp.org");
     lastNtpSync = millis();
   }
