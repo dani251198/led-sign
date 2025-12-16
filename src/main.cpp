@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.7.0";
+static const char *FW_VERSION = "v0.7.2";
 
 // --------- LED and effect settings ---------
 CRGB leds[DEFAULT_LED_COUNT];
@@ -1106,16 +1106,6 @@ void setup() {
 void loop() {
   if (wmPortal && portalActive) {
     wmPortal->process();
-    // Show a simple breathing effect to signal AP mode
-    static uint8_t breath = 0;
-    static int8_t dir = 1;
-    breath += dir;
-    if (breath == 0 || breath == 255) dir = -dir;
-    CRGB c = CHSV(160, 50, breath);
-    fill_solid(leds, configState.ledCount, c);
-    FastLED.show();
-    delay(30);
-    return;
   }
 
   server.handleClient();
