@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6.2";
+static const char *FW_VERSION = "v0.6.3";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -833,6 +833,12 @@ void handleConfigPost() {
   String err;
   if (!applyConfigJson(server.arg("plain"), err)) return sendJsonError(err);
   saveConfig();
+  if (WiFi.isConnected()) {
+    configTzTime(configState.tz.c_str(), "pool.ntp.org");
+    lastNtpSync = millis();
+    tzInitialized = true;
+  }
+  handleLeds(time(nullptr));
   server.send(200, "application/json", "{\"status\":\"ok\"}");
 }
 
@@ -1037,6 +1043,12 @@ void setupWifiAndTime() {
       String err;
       if (!applyConfigJson(wm.server->arg("plain"), err)) return sendJsonErrorTo(*wm.server, err);
       saveConfig();
+      if (WiFi.isConnected()) {
+        configTzTime(configState.tz.c_str(), "pool.ntp.org");
+        lastNtpSync = millis();
+        tzInitialized = true;
+      }
+      handleLeds(time(nullptr));
       wm.server->send(200, "application/json", "{\"status\":\"ok\"}");
     });
 
