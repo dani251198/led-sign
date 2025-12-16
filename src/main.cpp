@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6";
+static const char *FW_VERSION = "v0.6.1";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -690,8 +690,9 @@ void fetchIcalIfNeeded() {
 void showClock(time_t nowLocal, uint32_t colorHex, bool alert = false) {
   fill_solid(leds, configState.ledCount, CRGB::Black);
 
-  // Map 12h range onto strip as a progressive fill (e.g., 20:30 -> 8 full, 9th half)
-  double hours12 = fmod((double)nowLocal / 3600.0, 12.0); // 0..12
+  // Map local 12h range onto strip as a progressive fill (e.g., 20:30 -> 8 full, 9th half)
+  struct tm *tmNow = localtime(&nowLocal);
+  double hours12 = (tmNow->tm_hour % 12) + (tmNow->tm_min / 60.0); // 0..12
   double pos = (hours12 / 12.0) * configState.ledCount;   // 0..ledCount
   int full = floor(pos);
   double frac = pos - full; // 0..1

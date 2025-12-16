@@ -19,6 +19,7 @@
     button:hover { background: #eef1f9; }
     .btn-primary { background: #2563eb; border-color: #1d4ed8; color: #fff; }
     .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger:hover { background: #fecaca; border-color: #ef4444; color: #991b1b; }
     .row { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; }
     .grid-panels { display: grid; grid-template-columns: repeat(auto-fit,minmax(280px,1fr)); gap: 12px; }
     .inline { display: inline-flex; align-items: center; gap: 8px; }
@@ -87,9 +88,8 @@
 
       <fieldset>
         <legend>Farben</legend>
-        <label><input type="color" name="openColor"> Offen</label>
-        <label><input type="color" name="closedColor"> Geschlossen</label>
-        <label><input type="color" name="appointmentColor"> Termin</label>
+        <label><input type="color" name="openColor"> Agentur für Arbeit - Offen</label>
+        <label><input type="color" name="closedColor"> Agentur für Arbeit - Geschlossen</label>
         <label><input type="color" name="clockColor"> Uhr</label>
         <label><input type="color" name="effectColor"> Effektfarbe</label>
       </fieldset>
@@ -308,6 +308,7 @@
         const del = document.createElement('button');
         del.type = 'button';
         del.textContent = 'Löschen';
+        del.className = 'btn-danger';
         del.addEventListener('click', ()=>{
           icalEntries.splice(idx,1);
           renderIcalList();
@@ -761,6 +762,7 @@
         li.appendChild(document.createTextNode(toGermanDisplay(t.time || t)));
         const btn = document.createElement('button');
         btn.textContent = 'Löschen';
+        btn.className = 'btn-danger';
         btn.style.marginLeft = '8px';
         btn.addEventListener('click', async ()=>{
           const res = await fetch('/api/appointments',{method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({index: idx})});
