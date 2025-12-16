@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6.1";
+static const char *FW_VERSION = "v0.6.7";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
