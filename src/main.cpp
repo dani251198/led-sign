@@ -1107,6 +1107,10 @@ void loop() {
   if (wmPortal && portalActive) {
     wmPortal->process();
     if (WiFi.isConnected()) {
+      wmPortal->stopConfigPortal();
+      wmPortal->setEnableConfigPortal(false);
+      WiFi.softAPdisconnect(true);
+      WiFi.mode(WIFI_STA);
       portalActive = false;
       Serial.print("Connected: ");
       Serial.println(WiFi.localIP());

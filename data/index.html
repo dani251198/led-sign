@@ -219,6 +219,22 @@
       const mode = getSelectedMode();
       const effect = effectSelect.value;
       const openChk = document.querySelector('input[name="enableOpenHours"]');
+      const isApMode = latestStatus && latestStatus.wifi === false;
+      const clockRadio = document.querySelector('input[name="mode"][value="clock"]');
+      const clockLabel = clockRadio ? clockRadio.closest('.mode-pill') : null;
+      if(clockRadio){
+        clockRadio.disabled = isApMode;
+        if(isApMode && clockRadio.checked){
+          const effectRadio = document.querySelector('input[name="mode"][value="effect"]');
+          if(effectRadio){
+            effectRadio.checked = true;
+          }
+        }
+        if(clockLabel){
+          clockLabel.style.opacity = isApMode ? 0.5 : 1;
+          clockLabel.title = isApMode ? 'Im AP-Modus ist Uhr deaktiviert' : '';
+        }
+      }
       document.querySelectorAll('.mode-effect').forEach(el=>{
         el.classList.toggle('hidden', mode !== 'effect');
       });
@@ -265,7 +281,7 @@
       const coords = [
         {x:0,y:120},{x:15,y:95},{x:30,y:70},{x:45,y:45},{x:60,y:20},{x:75,y:0}, // steiler nach oben rechts (6 LEDs)
         {x:90,y:20},{x:105,y:45},{x:120,y:70},{x:135,y:95}, // steiler nach unten rechts (4 LEDs)
-        {x:120,y:95},{x:105,y:95} // 2 nach links (waagrecht, links vom letzten Punkt)
+        {x:110,y:95},{x:85,y:95} // 2 nach links (waagrecht, links vom letzten Punkt)
       ];
       coords.forEach((c, idx)=>{
         const d = document.createElement('div');
@@ -779,7 +795,8 @@
         statusEl.textContent = st.wifi ? `Online: ${st.ip}` : 'Offline';
         fwVersionEl.textContent = st.version || '--';
         latestStatus = st;
-        updateLedPreview();
+          updateModeVisibility();
+          updateLedPreview();
         renderIcalNext();
       } catch(err){
         statusEl.textContent = 'Keine Verbindung';
