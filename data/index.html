@@ -531,7 +531,6 @@
         color: (e.color||'').replace('#','') || (form.appointmentColor.value.replace('#',''))
       }));
       return {
-        ledCount: LED_COUNT,
         brightness: Math.round(Number(form.brightness.value) / 100 * 255),
         mode: getSelectedMode(),
         effect: form.effect.value,

@@ -22,7 +22,7 @@ ESP32 + WS2812B LED-Streifen mit Web-UI, Terminen, Öffnungszeiten, Effekten, OT
   - Manuelle Termine (bis 10), Eingabe `YYYY-MM-DD HH:MM` oder deutsch `TT.MM.JJJJ HH:MM`, eigene Farbe je Termin, Vorwarnzeit (Minuten) mit Blink.
   - Mehrere iCal-Quellen (bis 5) mit eigener Farbe; parser sucht früheste zukünftige DTSTART (mit Zeilen-Unfold). **Aktuell unzuverlässig**, UI zeigt Warnung.
 - **Öffnungszeiten**: Pro Wochentag (`HH:MM-HH:MM`), optional deaktivierbar; beeinflusst Uhr-Farbe im Statusmodus.
-- **Farben & Helligkeit**: Color-Picker für open/closed/appointment/clock/effect, Helligkeit 0–100, LED-Anzahl konfigurierbar (max 120).
+- **Farben & Helligkeit**: Color-Picker für open/closed/appointment/clock/effect, Helligkeit 0–100, LED-Anzahl fix 12.
 - **OTA & Releases**
   - `/api/update` Firmware, `/api/updateFs` Filesystem, `/api/updateBundle` für FW+FS. FS-Update sichert `/config.json` und spielt es zurück (Einstellungen bleiben).
   - Web-UI Release-Knopf lädt GitHub-Latest-Release-Info und kann FW(+FS)-Asset flashen.
@@ -32,7 +32,7 @@ ESP32 + WS2812B LED-Streifen mit Web-UI, Terminen, Öffnungszeiten, Effekten, OT
 
 ## Pinout & Annahmen
 - LED-Datenpin: `GPIO5` (falls anders, in `src/main.cpp` ändern).
-- Max. LEDs: 120 (anpassbar via Config, hartes Limit `MAX_LEDS`).
+- LED-Anzahl: 12 fest verdrahtet.
 - Versorgung: je nach LED-Anzahl ausreichendes 5V-Netzteil einplanen (ca. 60mA pro LED bei Vollweiß 100%).
 
 ## OTA aus GitHub-Release

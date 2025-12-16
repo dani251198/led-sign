@@ -10,15 +10,14 @@
 
 // --------- Hardware configuration ---------
 #define LED_PIN 5
-#define MAX_LEDS 120
 #define DEFAULT_LED_COUNT 12
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6.7";
+static const char *FW_VERSION = "v0.6.8";
 
 // --------- LED and effect settings ---------
-CRGB leds[MAX_LEDS];
+CRGB leds[DEFAULT_LED_COUNT];
 
 struct DayWindow {
   String start; // format HH:MM
@@ -215,7 +214,6 @@ bool isOpenNow(time_t nowLocal) {
 
 void saveConfig() {
   DynamicJsonDocument doc(2048);
-  doc["ledCount"] = configState.ledCount;
   doc["brightness"] = configState.brightness;
   doc["mode"] = configState.mode;
   doc["tz"] = configState.tz;
@@ -263,6 +261,9 @@ void saveConfig() {
 }
 
 void loadConfig() {
+  // LED count is fixed and not configurable
+  configState.ledCount = DEFAULT_LED_COUNT;
+
   if (!LittleFS.exists(FILE_CONFIG)) {
     Serial.println("Config file missing, using defaults.");
     // default opening hours 08:00-16:00 Mon-Fri
@@ -286,8 +287,6 @@ void loadConfig() {
     Serial.println("Failed to parse config, using defaults");
     return;
   }
-  configState.ledCount = doc["ledCount"] | DEFAULT_LED_COUNT;
-  configState.ledCount = constrain(configState.ledCount, 1, MAX_LEDS);
   configState.brightness = doc["brightness"] | 96;
   if (const char *v = doc["mode"]) configState.mode = v; else configState.mode = "clock";
   if (const char *v = doc["tz"]) configState.tz = v; else configState.tz = "CET-1CEST,M3.5.0,M10.5.0/3";
@@ -362,7 +361,6 @@ void sendJsonError(const String &msg) {
 
 String buildConfigJson() {
   DynamicJsonDocument doc(2048);
-  doc["ledCount"] = configState.ledCount;
   doc["brightness"] = configState.brightness;
   doc["mode"] = configState.mode;
   doc["tz"] = configState.tz;
@@ -429,9 +427,9 @@ bool applyConfigJson(const String &body, String &errOut) {
     errOut = "JSON parse error";
     return false;
   }
-
-  configState.ledCount = constrain((int)doc["ledCount"].as<int>(), 1, MAX_LEDS);
-  configState.brightness = doc["brightness"].as<int>();
+  if (doc["brightness"].is<int>()) {
+    configState.brightness = doc["brightness"].as<int>();
+  }
   if (const char *v = doc["mode"]) configState.mode = v;
   if (const char *v = doc["tz"]) configState.tz = v;
   if (const char *v = doc["icalUrl"]) configState.icalUrl = v; else configState.icalUrl = "";
@@ -1102,7 +1100,7 @@ void setup() {
 
   loadConfig();
 
-  FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, MAX_LEDS);
+  FastLED.addLeds<NEOPIXEL, LED_PIN>(leds, DEFAULT_LED_COUNT);
   FastLED.setBrightness(configState.brightness);
 
   setupWifiAndTime();
