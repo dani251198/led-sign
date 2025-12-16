@@ -528,7 +528,7 @@
       }
       const icals = (icalEntries||[]).filter(e=>e.url && e.url.trim().length>0).slice(0,5).map(e=>({
         url: e.url.trim(),
-        color: (e.color||'').replace('#','') || (form.appointmentColor.value.replace('#',''))
+        color: (e.color||'').replace('#','') || '00ffff'
       }));
       return {
         brightness: Math.round(Number(form.brightness.value) / 100 * 255),
@@ -543,7 +543,6 @@
         notifyMinutesBefore: Number(form.notifyMinutesBefore.value),
         openColor: form.openColor.value.replace('#',''),
         closedColor: form.closedColor.value.replace('#',''),
-        appointmentColor: form.appointmentColor.value.replace('#',''),
         clockColor: form.clockColor.value.replace('#',''),
         hours
       };
@@ -589,17 +588,16 @@
       form.tz.value = cfg.tz;
       form.openColor.value = `#${cfg.openColor || '00ff00'}`;
       form.closedColor.value = `#${cfg.closedColor || 'ff0000'}`;
-      form.appointmentColor.value = `#${cfg.appointmentColor || '00ffff'}`;
-      document.getElementById('newAppointmentColor').value = `#${cfg.appointmentColor || '00ffff'}`;
+      document.getElementById('newAppointmentColor').value = '#00ffff';
       form.enableAppointments.checked = cfg.enableAppointments ?? true;
       form.enableOpenHours.checked = cfg.enableOpenHours ?? true;
       form.clockColor.value = `#${cfg.clockColor || 'ffffff'}`;
       form.notifyMinutesBefore.value = cfg.notifyMinutesBefore ?? 30;
       icalEntries = Array.isArray(cfg.icals) ? cfg.icals.slice(0,5) : [];
       if(icalEntries.length === 0 && cfg.icalUrl){
-        icalEntries.push({url: cfg.icalUrl, color: cfg.icalColor || cfg.appointmentColor || '00ffff'});
+        icalEntries.push({url: cfg.icalUrl, color: cfg.icalColor || '00ffff'});
       }
-      icalEntries = icalEntries.map(e=>({url: e.url || '', color: (e.color||cfg.appointmentColor||'00ffff').replace('#','')}));
+      icalEntries = icalEntries.map(e=>({url: e.url || '', color: (e.color||'00ffff').replace('#','')}));
       renderIcalList();
       buildHours(cfg.hours);
       updateModeVisibility();
@@ -749,7 +747,7 @@
       const list = document.createElement('ul');
       arr.forEach((t, idx)=>{
         const li = document.createElement('li');
-        const color = t.color ? `#${t.color}` : `#${(latestConfig?.appointmentColor)||'00ffff'}`;
+        const color = t.color ? `#${t.color}` : '#00ffff';
         const swatch = document.createElement('span');
         swatch.style.display = 'inline-block';
         swatch.style.width = '12px';

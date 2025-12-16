@@ -40,10 +40,28 @@ jobs:
           name: led-sign-${{ github.ref_name }}
           path: artifacts/
 
+      - name: Generate release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          mkdir -p artifacts
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG=$(git describe --tags --abbrev=0 "${CURRENT_TAG}^" 2>/dev/null || git rev-list --max-parents=0 --first-parent HEAD)
+          if git rev-parse "${PREV_TAG}" >/dev/null 2>&1; then
+            RANGE="${PREV_TAG}..${CURRENT_TAG}"
+          else
+            RANGE="${CURRENT_TAG}"
+          fi
+          {
+            echo "## Changes in ${CURRENT_TAG}"
+            echo
+            git log --pretty=format:'- %s (%h)' ${RANGE}
+          } > artifacts/release_body.md
+
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: artifacts/*
+          body_path: artifacts/release_body.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

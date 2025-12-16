@@ -11,10 +11,11 @@
 // --------- Hardware configuration ---------
 #define LED_PIN 5
 #define DEFAULT_LED_COUNT 12
+#define DEFAULT_APPOINT_COLOR "00ffff"
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6.8";
+static const char *FW_VERSION = "v0.7.0";
 
 // --------- LED and effect settings ---------
 CRGB leds[DEFAULT_LED_COUNT];
@@ -51,7 +52,6 @@ struct DeviceConfig {
   uint16_t notifyMinutesBefore = 30;
   String openColor = "00ff00";
   String closedColor = "ff0000";
-  String appointmentColor = "00ffff";
   String clockColor = "ffffff";
   String effect = "rainbow";
   String effectColor = "ffffff";
@@ -160,7 +160,7 @@ AppointmentHit nextManualAppointment(time_t nowLocal) {
   if (parseAppointmentTime(configState.appointmentTime, legacy)) {
     if (difftime(legacy, nowLocal) >= 0 && (hit.when == 0 || legacy < hit.when)) {
       hit.when = legacy;
-      hit.color = configState.appointmentColor;
+      hit.color = DEFAULT_APPOINT_COLOR;
     }
   }
   return hit;
@@ -186,7 +186,7 @@ bool addAppointment(const String &val, const String &color) {
   time_t t;
   if (!parseAppointmentTime(val, t)) return false;
   configState.appointments[configState.appointmentCount].time = val;
-  configState.appointments[configState.appointmentCount].color = color.length() == 6 ? color : configState.appointmentColor;
+  configState.appointments[configState.appointmentCount].color = color.length() == 6 ? color : DEFAULT_APPOINT_COLOR;
   configState.appointmentCount++;
   saveConfig();
   return true;
@@ -235,7 +235,6 @@ void saveConfig() {
   }
   doc["openColor"] = configState.openColor;
   doc["closedColor"] = configState.closedColor;
-  doc["appointmentColor"] = configState.appointmentColor;
   doc["clockColor"] = configState.clockColor;
   doc["effect"] = configState.effect;
   doc["effectColor"] = configState.effectColor;
@@ -291,7 +290,7 @@ void loadConfig() {
   if (const char *v = doc["mode"]) configState.mode = v; else configState.mode = "clock";
   if (const char *v = doc["tz"]) configState.tz = v; else configState.tz = "CET-1CEST,M3.5.0,M10.5.0/3";
   if (const char *v = doc["icalUrl"]) configState.icalUrl = v; else configState.icalUrl = "";
-  if (const char *v = doc["icalColor"]) configState.icalColor = v; else configState.icalColor = configState.appointmentColor;
+  if (const char *v = doc["icalColor"]) configState.icalColor = v; else configState.icalColor = DEFAULT_APPOINT_COLOR;
   configState.icalCount = 0;
   JsonArray icalsLoad = doc["icals"].as<JsonArray>();
   if (!icalsLoad.isNull()) {
@@ -326,14 +325,13 @@ void loadConfig() {
       const char *c = v["color"].as<const char *>();
       if (t) {
         configState.appointments[configState.appointmentCount].time = t;
-        configState.appointments[configState.appointmentCount].color = c ? c : configState.appointmentColor;
+        configState.appointments[configState.appointmentCount].color = c ? c : DEFAULT_APPOINT_COLOR;
         configState.appointmentCount++;
       }
     }
   }
   if (const char *v = doc["openColor"]) configState.openColor = v; else configState.openColor = "00ff00";
   if (const char *v = doc["closedColor"]) configState.closedColor = v; else configState.closedColor = "ff0000";
-  if (const char *v = doc["appointmentColor"]) configState.appointmentColor = v; else configState.appointmentColor = "00ffff";
   if (const char *v = doc["clockColor"]) configState.clockColor = v; else configState.clockColor = "ffffff";
   if (const char *v = doc["effect"]) configState.effect = v; else configState.effect = "rainbow";
   if (const char *v = doc["effectColor"]) configState.effectColor = v; else configState.effectColor = "ffffff";
@@ -378,7 +376,6 @@ String buildConfigJson() {
   doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
   doc["openColor"] = configState.openColor;
   doc["closedColor"] = configState.closedColor;
-  doc["appointmentColor"] = configState.appointmentColor;
   doc["clockColor"] = configState.clockColor;
   doc["effect"] = configState.effect;
   doc["effectColor"] = configState.effectColor;
@@ -433,14 +430,13 @@ bool applyConfigJson(const String &body, String &errOut) {
   if (const char *v = doc["mode"]) configState.mode = v;
   if (const char *v = doc["tz"]) configState.tz = v;
   if (const char *v = doc["icalUrl"]) configState.icalUrl = v; else configState.icalUrl = "";
-  if (const char *v = doc["icalColor"]) configState.icalColor = v; else configState.icalColor = configState.appointmentColor;
+  if (const char *v = doc["icalColor"]) configState.icalColor = v; else configState.icalColor = DEFAULT_APPOINT_COLOR;
   configState.enableAppointments = doc["enableAppointments"].is<bool>() ? doc["enableAppointments"].as<bool>() : true;
   configState.enableOpenHours = doc["enableOpenHours"].is<bool>() ? doc["enableOpenHours"].as<bool>() : true;
   if (const char *v = doc["appointmentTime"]) configState.appointmentTime = v;
   if (doc["notifyMinutesBefore"].is<int>()) configState.notifyMinutesBefore = doc["notifyMinutesBefore"].as<int>();
   if (const char *v = doc["openColor"]) configState.openColor = v;
   if (const char *v = doc["closedColor"]) configState.closedColor = v;
-  if (const char *v = doc["appointmentColor"]) configState.appointmentColor = v;
   if (const char *v = doc["clockColor"]) configState.clockColor = v;
   if (const char *v = doc["effect"]) configState.effect = v;
   if (const char *v = doc["effectColor"]) configState.effectColor = v;
@@ -455,7 +451,7 @@ bool applyConfigJson(const String &body, String &errOut) {
       const char *c = v["color"].as<const char *>();
       if (t) {
         configState.appointments[configState.appointmentCount].time = t;
-        configState.appointments[configState.appointmentCount].color = c ? c : configState.appointmentColor;
+        configState.appointments[configState.appointmentCount].color = c ? c : DEFAULT_APPOINT_COLOR;
         configState.appointmentCount++;
       }
     }
@@ -794,7 +790,7 @@ void handleLeds(time_t nowLocal) {
     double diff = next.when > 0 ? difftime(next.when, nowLocal) : 1e9;
     bool appointmentActive = configState.enableAppointments && next.when > 0 && diff >= 0 && diff <= (configState.notifyMinutesBefore * 60);
     if (appointmentActive) {
-      uint32_t color = parseHexColor(next.color.length() == 6 ? next.color : configState.appointmentColor);
+      uint32_t color = parseHexColor(next.color.length() == 6 ? next.color : DEFAULT_APPOINT_COLOR);
       showClock(nowLocal, color, true);
     } else {
       showEffect();
@@ -807,7 +803,7 @@ void handleLeds(time_t nowLocal) {
   bool appointmentActive = configState.enableAppointments && next.when > 0 && diff >= 0 && diff <= (configState.notifyMinutesBefore * 60);
 
   if (appointmentActive) {
-    uint32_t color = parseHexColor(next.color.length() == 6 ? next.color : configState.appointmentColor);
+    uint32_t color = parseHexColor(next.color.length() == 6 ? next.color : DEFAULT_APPOINT_COLOR);
     showClock(nowLocal, color, true);
     return;
   }
