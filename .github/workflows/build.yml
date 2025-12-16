@@ -51,10 +51,14 @@ jobs:
           else
             RANGE="${CURRENT_TAG}"
           fi
+          LOG_OUTPUT=$(git log --pretty=format:'- %s (%h)' ${RANGE})
+          if [ -z "${LOG_OUTPUT}" ]; then
+            LOG_OUTPUT="- No commits found in range ${RANGE}"
+          fi
           {
             echo "## Changes in ${CURRENT_TAG}"
             echo
-            git log --pretty=format:'- %s (%h)' ${RANGE}
+            echo "${LOG_OUTPUT}"
           } > artifacts/release_body.md
 
       - name: Create Release
