@@ -38,7 +38,7 @@
     .clockblock { text-align:right; }
     #clockNow { font-size: 22px; font-weight: 700; }
     #dateNow { font-size: 16px; color:#475569; }
-    .led-preview { position: relative; width: 210px; height: 150px; margin: 12px 0 18px; background: #e7ecf5; border: 1px solid #d5d7e0; border-radius: 10px; }
+    .led-preview { position: relative; width: 160px; height: 140px; margin: 12px 0 18px; background: #e7ecf5; border: 1px solid #d5d7e0; border-radius: 10px; }
     .led-dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #d1d5db; box-shadow: 0 0 6px rgba(0,0,0,0.15); transition: background-color 0.2s ease, filter 1s linear; }
     .led-preview.animate-rainbow .led-dot { animation: hue-cycle 2.4s linear infinite; }
     @keyframes hue-cycle { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
@@ -265,7 +265,7 @@
       const coords = [
         {x:0,y:120},{x:15,y:95},{x:30,y:70},{x:45,y:45},{x:60,y:20},{x:75,y:0}, // steiler nach oben rechts (6 LEDs)
         {x:90,y:20},{x:105,y:45},{x:120,y:70},{x:135,y:95}, // steiler nach unten rechts (4 LEDs)
-        {x:125,y:95},{x:115,y:95} // 2 nach links (waagrecht, links vom letzten Punkt)
+        {x:120,y:95},{x:105,y:95} // 2 nach links (waagrecht, links vom letzten Punkt)
       ];
       coords.forEach((c, idx)=>{
         const d = document.createElement('div');

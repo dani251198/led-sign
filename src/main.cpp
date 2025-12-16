@@ -1106,6 +1106,14 @@ void setup() {
 void loop() {
   if (wmPortal && portalActive) {
     wmPortal->process();
+    if (WiFi.isConnected()) {
+      portalActive = false;
+      Serial.print("Connected: ");
+      Serial.println(WiFi.localIP());
+      configTzTime(configState.tz.c_str(), "pool.ntp.org");
+      lastNtpSync = millis();
+      tzInitialized = true;
+    }
   }
 
   server.handleClient();
