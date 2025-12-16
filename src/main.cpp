@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.5.5";
+static const char *FW_VERSION = "v0.6";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -68,6 +68,37 @@ time_t nextIcalTimes[MAX_ICALS] = {0};
 WiFiManager *wmPortal = nullptr;
 bool portalActive = false;
 bool tzInitialized = false;
+
+void showOtaProgress(size_t written, int total, bool isFs) {
+  int half = configState.ledCount / 2;
+  int segStart = isFs ? 0 : half;
+  int segLen = isFs ? half : (configState.ledCount - half);
+  if (segLen <= 0) segLen = configState.ledCount; // fallback if only few LEDs
+
+  float pct;
+  if (total > 0) {
+    pct = constrain((float)written / (float)total, 0.0f, 1.0f);
+  } else {
+    // Unknown size: wrap a simple ramp to show activity
+    pct = fmodf((float)written / 65536.0f, 1.0f);
+  }
+
+  int lit = (int)roundf(pct * segLen);
+  CRGB color = isFs ? CRGB::Blue : CRGB::Orange;
+  fill_solid(leds, configState.ledCount, CRGB::Black);
+  for (int i = 0; i < segLen; ++i) {
+    int idx = segStart + i;
+    if (idx >= configState.ledCount) break;
+    if (i < lit) {
+      leds[idx] = color;
+    } else if (i == lit && pct < 1.0f) {
+      leds[idx] = color;
+      leds[idx].nscale8_video(80);
+    }
+  }
+  FastLED.setBrightness(configState.brightness);
+  FastLED.show();
+}
 
 // Forward declarations
 void saveConfig();
@@ -344,6 +375,9 @@ String buildConfigJson() {
     ic["color"] = configState.icals[i].color;
   }
   doc["appointmentTime"] = configState.appointmentTime;
+  doc["enableAppointments"] = configState.enableAppointments;
+  doc["enableOpenHours"] = configState.enableOpenHours;
+  doc["notifyMinutesBefore"] = configState.notifyMinutesBefore;
   doc["openColor"] = configState.openColor;
   doc["closedColor"] = configState.closedColor;
   doc["appointmentColor"] = configState.appointmentColor;
@@ -504,6 +538,7 @@ bool performUpdate(const String &url, bool isFs = false) {
         }
         written += r;
         lastProgress = millis();
+        showOtaProgress(written, len, isFs);
         if (written % 262144 < (size_t)r) { // alle ~256KB
           Serial.printf("[OTA] Fortschritt: %u Bytes\n", (unsigned)written);
         }
@@ -692,6 +727,9 @@ void showStatus(time_t nowLocal) {
 void showEffect() {
   static uint8_t hue = 0;
   static uint16_t chase = 0;
+  static unsigned long lastTheaterStep = 0;
+  static unsigned long lastXmasStep = 0;
+  const unsigned long nowMs = millis();
   if (configState.effect == "solid") {
     CRGB c;
     colorToCrgb(parseHexColor(configState.effectColor), c);
@@ -707,10 +745,15 @@ void showEffect() {
     CRGB c;
     colorToCrgb(parseHexColor(configState.effectColor), c);
     fill_solid(leds, configState.ledCount, CRGB::Black);
+    uint8_t speed = constrain(configState.effectSpeed, 1, 20);
+    uint16_t stepMs = map(speed, 1, 20, 250, 40);
+    if (nowMs - lastTheaterStep >= stepMs) {
+      lastTheaterStep = nowMs;
+      chase = (chase + 1) % 3;
+    }
     for (int i = chase % 3; i < configState.ledCount; i += 3) {
       leds[i] = c;
     }
-    chase = (chase + constrain(configState.effectSpeed, 1, 20)) % 3;
   } else if (configState.effect == "twinkle") {
     for (int i = 0; i < configState.ledCount; ++i) {
       leds[i].fadeToBlackBy(20);
@@ -723,11 +766,16 @@ void showEffect() {
   } else if (configState.effect == "xmas") {
     // Colorful blinking string: red, green, gold, blue with gentle decay
     static const CRGB palette[] = {CRGB::Red, CRGB::Green, CRGB(255,215,0), CRGB::Blue};
-    for (int i = 0; i < configState.ledCount; ++i) {
-      leds[i].fadeToBlackBy(50);
-      if (random8() < 80) {
-        uint8_t idx = random8(4);
-        leds[i] = palette[idx];
+    uint8_t speed = constrain(configState.effectSpeed, 1, 20);
+    uint16_t stepMs = map(speed, 1, 20, 320, 80);
+    uint8_t chance = map(speed, 1, 20, 20, 120); // more hits when faster
+    if (nowMs - lastXmasStep >= stepMs) {
+      lastXmasStep = nowMs;
+      for (int i = 0; i < configState.ledCount; ++i) {
+        leds[i].fadeToBlackBy(40);
+        if (random8() < chance) {
+          leds[i] = palette[random8(4)];
+        }
       }
     }
   } else {
