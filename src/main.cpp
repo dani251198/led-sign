@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.6.1";
+static const char *FW_VERSION = "v0.6.2";
 
 // --------- LED and effect settings ---------
 CRGB leds[MAX_LEDS];
@@ -1110,18 +1110,16 @@ void setup() {
 }
 
 void loop() {
-  if (wmPortal && portalActive) {
+  if (wmPortal) {
     wmPortal->process();
-    // Show a simple breathing effect to signal AP mode
-    static uint8_t breath = 0;
-    static int8_t dir = 1;
-    breath += dir;
-    if (breath == 0 || breath == 255) dir = -dir;
-    CRGB c = CHSV(160, 50, breath);
-    fill_solid(leds, configState.ledCount, c);
-    FastLED.show();
-    delay(30);
-    return;
+    if (portalActive && WiFi.isConnected()) {
+      portalActive = false;
+      Serial.print("Connected: ");
+      Serial.println(WiFi.localIP());
+      configTzTime(configState.tz.c_str(), "pool.ntp.org");
+      lastNtpSync = millis();
+      tzInitialized = true;
+    }
   }
 
   server.handleClient();
