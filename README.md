@@ -36,6 +36,14 @@ ESP32 + WS2812B LED-Streifen mit Web-UI, Terminen, Öffnungszeiten, Effekten, OT
 - Versorgung: je nach LED-Anzahl ausreichendes 5V-Netzteil einplanen (ca. 60mA pro LED bei Vollweiß 100%).
 
 ## OTA aus GitHub-Release
+
+### Automatisch
+1. passe `static const char *FW_VERSION = "v0.7.6";` entsprechend an
+2. tagge entsprechend beginnend mit v* `git tag -a v0.7.6 -m "v0.7.6"`
+3. pushe branch und tag `git push origin main --tags`
+4. CI baut software automatisch innerhalb von 1min 30s, danach ist release via OTA verfügbar.
+
+### Manuell
 1. Lege in GitHub ein Release mit Asset `firmware.bin` an (PlatformIO erzeugt `firmware.bin` im `.pio/build/esp32dev/`).
 2. Kopiere die direkte Download-URL des Assets ("Right click copy link").
 3. Trage sie in der Web-UI unter "Firmware URL" ein → `Update & Reboot`.
