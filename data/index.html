@@ -42,6 +42,8 @@
     .led-dot { position: absolute; width: 16px; height: 16px; border-radius: 50%; background: #d1d5db; box-shadow: 0 0 6px rgba(0,0,0,0.15); transition: background-color 0.2s ease, filter 1s linear; }
     .led-preview.animate-rainbow .led-dot { animation: hue-cycle 2.4s linear infinite; }
     @keyframes hue-cycle { from { filter: hue-rotate(0deg); } to { filter: hue-rotate(360deg); } }
+    .subsection-title { font-weight: 700; margin: 12px 0 6px; font-size: 15px; color: #0f172a; }
+    .subbox { margin-top: 10px; padding: 10px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc; }
   </style>
 </head>
 <body>
@@ -113,29 +115,37 @@
 
     <fieldset>
       <legend>Termine</legend>
-        <label>iCal Kalender</label>
-        <div style="padding:8px; margin:4px 0 8px; border:1px solid #fca5a5; background:#fef2f2; color:#991b1b; border-radius:6px; font-size:13px;">
-          Hinweis: iCal-Termine funktionieren aktuell nicht.
+        <label>Vorwarnzeit (Minuten vor Termin)
+          <input type="number" name="notifyMinutesBefore" min="0" max="1440" value="30">
+        </label>
+
+        <div class="subbox">
+          <div class="subsection-title">iCal</div>
+          <label>iCal Kalender</label>
+          <div style="padding:8px; margin:4px 0 8px; border:1px solid #fca5a5; background:#fef2f2; color:#991b1b; border-radius:6px; font-size:13px;">
+            Hinweis: iCal-Termine funktionieren aktuell nicht.
+          </div>
+          <div id="icalList" class="vstack" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
+          <div id="icalNext" style="margin:4px 0 10px; color:#0f172a; font-size:14px;"></div>
+          <div class="inline-ical">
+            <input type="text" id="newIcalUrl" placeholder="https://..." style="flex:1; min-width:0;">
+            <input type="color" id="newIcalColor" value="#00ffff" title="Farbe" class="ical-color">
+            <button type="button" id="btnAddIcal">Hinzufügen</button>
+          </div>
+          <small style="color:#475569;">Bis zu 5 Kalender. Jeder Termin verwendet seine Kalenderfarbe. Nächste Termine je Kalender siehe oben.</small>
         </div>
-      <div id="icalList" class="vstack" style="display:flex; flex-direction:column; gap:8px; margin-bottom:8px;"></div>
-      <div class="inline-ical">
-        <input type="text" id="newIcalUrl" placeholder="https://..." style="flex:1; min-width:0;">
-        <input type="color" id="newIcalColor" value="#00ffff" title="Farbe" class="ical-color">
-        <button type="button" id="btnAddIcal">Hinzufügen</button>
-      </div>
-      <small style="color:#475569;">Bis zu 5 Kalender. Jeder Termin verwendet seine Kalenderfarbe. Nächste Termine je Kalender siehe unten.</small>
-      <label>Vorwarnzeit (Minuten vor Termin)
-        <input type="number" name="notifyMinutesBefore" min="0" max="1440" value="30">
-      </label>
-      <label>Neuer Termin (deutsches Format: TT.MM.JJJJ HH:MM)
-        <div style="display:flex; gap:8px; align-items:center;">
-          <input type="text" id="newAppointment" style="flex:1;" placeholder="24.12.2025 10:30">
-          <input type="color" id="newAppointmentColor" value="#00ffff" title="Farbe" style="width:64px; height:36px; padding:0; border:none; background:transparent;">
-          <button type="button" id="btnAddAppt">Hinzufügen</button>
+
+        <div class="subbox">
+          <div class="subsection-title">Manuelle Termine</div>
+          <label>Neuer Termin (deutsches Format: TT.MM.JJJJ HH:MM)
+            <div style="display:flex; gap:8px; align-items:center;">
+              <input type="text" id="newAppointment" style="flex:1;" placeholder="24.12.2025 10:30">
+              <input type="color" id="newAppointmentColor" value="#00ffff" title="Farbe" style="width:64px; height:36px; padding:0; border:none; background:transparent;">
+              <button type="button" id="btnAddAppt">Hinzufügen</button>
+            </div>
+          </label>
+          <div id="apptList"></div>
         </div>
-      </label>
-      <div id="apptList"></div>
-        <div id="icalNext" style="margin-top:10px; color:#0f172a; font-size:14px;"></div>
     </fieldset>
 
     <div class="actions">
@@ -148,8 +158,8 @@
     <div style="margin-top:10px; padding:10px; border:1px solid #e2e8f0; border-radius:8px; background:#f8fafc;">
       <div class="inline" style="gap:8px;">
         <strong>Release</strong>
-        <button type="button" id="btnReleaseInfo">Aktualisieren</button>
-        <button type="button" id="btnReleaseFlash" class="btn-primary">Neueste Release flashen (FW+FS)</button>
+        <button type="button" id="btnReleaseInfo">auf Update prüfen</button>
+        <button type="button" id="btnReleaseFlash" class="btn-primary">Neuesten Release flashen (FW+FS)</button>
       </div>
       <div id="releaseInfo" style="margin-top:8px; font-size:14px; color:#0f172a; white-space:pre-wrap;">Noch nicht geladen.</div>
       <div id="updateStatus" class="hidden" style="margin-top:6px; font-size:13px; color:#0f172a; white-space:pre-wrap;">Update-Status</div>
@@ -715,11 +725,11 @@
         const assetFs = (data.assets || []).find(a => /littlefs\.bin/i.test(a.name));
         const fwUrl = assetFw ? assetFw.browser_download_url : '';
         const fsUrl = assetFs ? assetFs.browser_download_url : '';
-        releaseInfo.innerHTML = `Aktuell: ${fwVersionEl.textContent || '--'}\nVersion: ${data.tag_name || data.name || 'n/a'}\nDatum: ${(data.published_at || '').substring(0,10)}\nNotes:\n${notes}${fwUrl ? `\nFirmware: ${assetFw.name}` : '\nKeine Firmware-Asset gefunden'}${fsUrl ? `\nFilesystem: ${assetFs.name}` : '\nKein Filesystem-Asset gefunden'}`;
+        releaseInfo.innerHTML = `<strong>Aktuell:</strong> ${fwVersionEl.textContent || '--'}\n<strong>Version:</strong> ${data.tag_name || data.name || 'n/a'}\n<strong>Datum:</strong> ${(data.published_at || '').substring(0,10)}\n<strong>Notes:</strong>\n${notes}${fwUrl ? `\n<strong>Firmware:</strong> ${assetFw.name}` : '\nKeine Firmware-Asset gefunden'}${fsUrl ? `\n<strong>Filesystem:</strong> ${assetFs.name}` : '\nKein Filesystem-Asset gefunden'}`;
         releaseInfo.dataset.fwUrl = fwUrl;
         releaseInfo.dataset.fsUrl = fsUrl;
         btnReleaseFlash.disabled = !fwUrl;
-        if(fwUrl) btnReleaseFlash.textContent = fsUrl ? `Neueste Release flashen (FW+FS ${data.tag_name || ''})` : `Neueste Release flashen (nur FW ${data.tag_name || ''})`;
+        if(fwUrl) btnReleaseFlash.textContent = fsUrl ? `Neuesten Release flashen (FW+FS ${data.tag_name || ''})` : `Neuesten Release flashen (nur FW ${data.tag_name || ''})`;
       } catch(err){
         releaseInfo.textContent = 'Fehler: ' + err.message;
         releaseInfo.dataset.fwUrl = '';
