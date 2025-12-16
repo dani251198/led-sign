@@ -15,7 +15,7 @@
 #define FILE_CONFIG "/config.json"
 #define MAX_APPOINTMENTS 10
 #define MAX_ICALS 5
-static const char *FW_VERSION = "v0.7.2";
+static const char *FW_VERSION = "v0.7.3";
 
 // --------- LED and effect settings ---------
 CRGB leds[DEFAULT_LED_COUNT];
@@ -1109,6 +1109,15 @@ void loop() {
   }
 
   server.handleClient();
+
+  // In AP/portal mode default to the configured effect for a simple visual indicator
+  if (portalActive) {
+    FastLED.setBrightness(configState.brightness);
+    showEffect();
+    delay(30);
+    return;
+  }
+
   time_t nowLocal = time(nullptr);
   if (tzInitialized && millis() - lastNtpSync > 6UL * 60UL * 60UL * 1000UL) {
     configTzTime(configState.tz.c_str(), "pool.ntp.org");
